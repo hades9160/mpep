@@ -3,6 +3,7 @@
 // ============================================================================
 import { supabase } from './supabaseClient.js';
 import { Chart, registerables } from 'chart.js';
+import { runBulkUpload } from './bulkUpload.js';
 Chart.register(...registerables);
 
 let CURRENT_USER = null;
@@ -736,6 +737,63 @@ async function loadTrendChart() {
     options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
   });
 }
+
+// ---------------------------------------------------------------------------
+// BULK UPLOAD (Employees, Probationary, Regular, HR Attention, 3rd/5th Month)
+// ---------------------------------------------------------------------------
+const BULK_REFRESH = {
+  employees: loadEmployeesFull,
+  probationary: () => loadEvaluations('Probationary'),
+  regular: () => loadEvaluations('Regular'),
+  hrAttention: loadHrAttention,
+  thirdFifth: loadThirdFifth,
+};
+
+function bulkUploadModalHtml(label) {
+  return `
+    <div class="form-grid">
+      <div class="field-sm span-2">
+        <label>Select .xlsx or .csv file — download the template first if you haven't.</label>
+        <input type="file" id="bulkFileInput" accept=".xlsx,.xls,.csv">
+      </div>
+      <div class="field-sm span-2" id="bulkStatus" style="color:#6b7280;font-size:13px;">
+        Uploading into: <strong>${escapeHtml(label)}</strong>. Existing employee names are matched automatically;
+        unrecognized names are added to the Employees list.
+      </div>
+    </div>`;
+}
+
+function openBulkUploadModal(configKey, label) {
+  openModal(`Bulk Upload — ${label}`, bulkUploadModalHtml(label), async () => {
+    const fileInput = document.getElementById('bulkFileInput');
+    const statusEl = document.getElementById('bulkStatus');
+    const file = fileInput?.files?.[0];
+    if (!file) { toast('Choose a file first', 'error'); return; }
+    statusEl.textContent = 'Uploading…';
+    try {
+      const result = await runBulkUpload(configKey, file);
+      const parts = [`${result.inserted} row(s) added`];
+      if (result.skipped) parts.push(`${result.skipped} skipped`);
+      toast(parts.join(', '), result.errors.length && !result.inserted ? 'error' : 'success');
+      if (result.errors.length) {
+        console.warn('Bulk upload issues:', result.errors);
+      }
+      closeModal();
+      await loadEmployees();          // refresh master list (may have new employees)
+      const refreshFn = BULK_REFRESH[configKey];
+      if (refreshFn) await refreshFn();
+    } catch (err) {
+      statusEl.textContent = 'Failed: ' + err.message;
+      toast('Bulk upload failed: ' + err.message, 'error');
+    }
+  });
+}
+
+document.getElementById('bulkEmployeesBtn')?.addEventListener('click', () => openBulkUploadModal('employees', 'Employees'));
+document.getElementById('bulkProbBtn')?.addEventListener('click', () => openBulkUploadModal('probationary', 'Probationary Evaluations'));
+document.getElementById('bulkRegBtn')?.addEventListener('click', () => openBulkUploadModal('regular', 'Regular Evaluations'));
+document.getElementById('bulkHrBtn')?.addEventListener('click', () => openBulkUploadModal('hrAttention', 'HR Attention'));
+document.getElementById('bulkTfBtn')?.addEventListener('click', () => openBulkUploadModal('thirdFifth', '3rd & 5th Month Tracker'));
 
 // ---------------------------------------------------------------------------
 // HELPERS

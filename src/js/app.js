@@ -1,6 +1,9 @@
 // ============================================================================
 // Aurion Solar — Performance Evaluation Dashboard — app logic
 // ============================================================================
+import { supabase } from './supabaseClient.js';
+import { Chart, registerables } from 'chart.js';
+Chart.register(...registerables);
 
 let CURRENT_USER = null;
 let SELECTED_MONTH = null;     // 'YYYY-MM-01'
@@ -13,17 +16,17 @@ let editingTable = null;        // supabase table currently being edited
 // ---------------------------------------------------------------------------
 (async function init() {
   const { data } = await supabase.auth.getSession();
-  if (!data.session) { window.location.href = 'login.html'; return; }
+  if (!data.session) { window.location.href = '/login.html'; return; }
   CURRENT_USER = data.session.user;
   document.getElementById('userEmail').textContent = CURRENT_USER.email;
 
   supabase.auth.onAuthStateChange((event, session) => {
-    if (!session) window.location.href = 'login.html';
+    if (!session) window.location.href = '/login.html';
   });
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
     await supabase.auth.signOut();
-    window.location.href = 'login.html';
+    window.location.href = '/login.html';
   });
 
   setupNav();
@@ -628,6 +631,33 @@ async function loadDashboard() {
     <div class="kpi-card blue"><div class="kpi-label">PIP / Action Plan</div><div class="kpi-value">${counts.pip}</div></div>
     <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value">${counts.completed}</div></div>
   `;
+
+  // Monthly Summary by Category table (mirrors the "CATEGORY | TOTAL | ON TRACK..." table
+  // from the original Excel Monthly Summary sheet)
+  function categoryRow(label, type) {
+    const rows = evals.filter(e => e.employment_type === type);
+    const c = {
+      total: rows.length,
+      onTrack: rows.filter(e => ['Passed', 'Satisfactory'].includes(e.evaluation_result)).length,
+      needsImprovement: rows.filter(e => e.evaluation_result === 'Needs Improvement').length,
+      failed: rows.filter(e => e.evaluation_result === 'Failed').length,
+      pip: rows.filter(e => e.evaluation_result === 'PIP').length,
+      forReview: rows.filter(e => e.evaluation_result === 'For Review').length,
+      completed: rows.filter(e => e.evaluation_result === 'Completed').length,
+    };
+    return `<tr>
+      <td><strong>${label}</strong></td>
+      <td>${c.total}</td><td>${c.onTrack}</td><td>${c.needsImprovement}</td>
+      <td>${c.failed}</td><td>${c.pip}</td><td>${c.forReview}</td><td>${c.completed}</td>
+    </tr>`;
+  }
+  document.getElementById('categorySummaryTbody').innerHTML =
+    categoryRow('Probationary Employees', 'Probationary') +
+    categoryRow('Regular Employees', 'Regular') +
+    `<tr style="background:var(--slate-50);font-weight:700;">
+      <td>Total</td><td>${evals.length}</td><td>${counts.onTrack}</td><td>${counts.needsImprovement}</td>
+      <td>${counts.failed}</td><td>${counts.pip}</td><td>${counts.forReview}</td><td>${counts.completed}</td>
+    </tr>`;
 
   // Status donut
   const statusCtx = document.getElementById('statusChart');

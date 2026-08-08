@@ -37,8 +37,34 @@ let editingTable = null;        // supabase table currently being edited
   bindStaticButtons();
 
   await loadEmployees();
+  await jumpToMonthWithData();   // pick a month that actually has data, if the current one doesn't
   await refreshCurrentView();
 })();
+
+// ---------------------------------------------------------------------------
+// If the default (current calendar) month has no evaluations logged yet,
+// but some other month does, jump the selector to the most recent month
+// that actually has data — otherwise the dashboard looks empty even though
+// data exists. Only runs once, on initial load.
+// ---------------------------------------------------------------------------
+async function jumpToMonthWithData() {
+  const { data: currentMonthRows } = await supabase
+    .from('evaluations').select('id').eq('reporting_month', SELECTED_MONTH).limit(1);
+  if (currentMonthRows && currentMonthRows.length) return; // current month already has data
+
+  const { data: latest } = await supabase
+    .from('evaluations').select('reporting_month')
+    .order('reporting_month', { ascending: false }).limit(1);
+  if (latest && latest.length) {
+    const sel = document.getElementById('monthSelect');
+    const target = latest[0].reporting_month;
+    // Only jump if that month exists as an option in the (rolling 12mo back / 3mo ahead) selector
+    if ([...sel.options].some(o => o.value === target)) {
+      sel.value = target;
+      SELECTED_MONTH = target;
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // NAVIGATION
@@ -636,13 +662,28 @@ async function loadDashboard() {
 
   const kpiGrid = document.getElementById('kpiGrid');
   kpiGrid.innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Total Evaluated</div><div class="kpi-value">${evals.length}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Employees</div><div class="kpi-value">${EMPLOYEES.length}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Evaluated (this month)</div><div class="kpi-value">${evals.length}</div></div>
     <div class="kpi-card green"><div class="kpi-label">On Track</div><div class="kpi-value">${counts.onTrack}</div></div>
     <div class="kpi-card yellow"><div class="kpi-label">Needs Improvement</div><div class="kpi-value">${counts.needsImprovement}</div></div>
     <div class="kpi-card red"><div class="kpi-label">Failed</div><div class="kpi-value">${counts.failed}</div></div>
     <div class="kpi-card blue"><div class="kpi-label">PIP / Action Plan</div><div class="kpi-value">${counts.pip}</div></div>
     <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value">${counts.completed}</div></div>
   `;
+
+  // Friendly empty-state hint: data exists but not for the selected month.
+  const existingBanner = document.getElementById('dashEmptyBanner');
+  if (existingBanner) existingBanner.remove();
+  if (evals.length === 0 && EMPLOYEES.length > 0) {
+    const monthLabel = new Date(SELECTED_MONTH + 'T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const banner = document.createElement('div');
+    banner.id = 'dashEmptyBanner';
+    banner.className = 'panel';
+    banner.style.cssText = 'margin-bottom:16px;border-left:4px solid #F5A623;';
+    banner.innerHTML = `<strong>No evaluations logged for ${monthLabel}.</strong> You have ${EMPLOYEES.length} employee(s) on file —
+      use the Reporting Month picker above to check other months, or add/bulk-upload evaluations for this one.`;
+    kpiGrid.insertAdjacentElement('afterend', banner);
+  }
 
   // Monthly Summary by Category table (mirrors the "CATEGORY | TOTAL | ON TRACK..." table
   // from the original Excel Monthly Summary sheet)

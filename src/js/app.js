@@ -95,18 +95,25 @@ async function loadView(view) {
 // ---------------------------------------------------------------------------
 // MONTH SELECTOR (rolling window, 12 months back to 3 months ahead)
 // ---------------------------------------------------------------------------
+function monthStr(year, monthIndex) {
+  // Builds a 'YYYY-MM-01' string from local year/month without going through
+  // toISOString(), which converts to UTC first and can roll the date back
+  // to the previous day for timezones ahead of UTC (e.g. Philippines, UTC+8).
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+}
+
 function populateMonthSelector() {
   const sel = document.getElementById('monthSelect');
   const now = new Date();
   const opts = [];
   for (let i = -12; i <= 3; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const value = d.toISOString().slice(0, 10);
+    const value = monthStr(d.getFullYear(), d.getMonth());
     const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
     opts.push({ value, label });
   }
   sel.innerHTML = opts.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
-  const currentValue = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const currentValue = monthStr(now.getFullYear(), now.getMonth());
   sel.value = currentValue;
   SELECTED_MONTH = currentValue;
 
@@ -245,6 +252,7 @@ async function saveEmployee() {
   await loadEmployeesFull();
 }
 async function loadEmployeesFull() { await loadEmployees(); renderEmployeesTable(); }
+window.loadEmployeesFull = loadEmployeesFull;
 
 async function deleteRow(table, id, refreshFn) {
   if (!confirm('Delete this record? This cannot be undone.')) return;
@@ -273,6 +281,7 @@ async function loadEvaluations(type) {
   if (type === 'Probationary') renderProbTable(data || []);
   else renderRegTable(data || []);
 }
+window.loadEvaluations = loadEvaluations;
 
 function resultBadge(result) {
   const map = {
@@ -432,6 +441,7 @@ async function loadHrAttention() {
     </tr>
   `).join('');
 }
+window.loadHrAttention = loadHrAttention;
 function hrFormHtml(r = {}) {
   return `
     <div class="form-grid">
@@ -501,6 +511,7 @@ async function loadThirdFifth() {
     </tr>
   `).join('');
 }
+window.loadThirdFifth = loadThirdFifth;
 function tfFormHtml(r = {}) {
   return `
     <div class="form-grid">
@@ -668,7 +679,7 @@ async function loadDashboard() {
       labels: ['On Track', 'Needs Improvement', 'Failed', 'PIP / Action Plan', 'For Review', 'Completed'],
       datasets: [{
         data: [counts.onTrack, counts.needsImprovement, counts.failed, counts.pip, counts.forReview, counts.completed],
-        backgroundColor: ['#2E9E5B', '#E0A800', '#D8473C', '#3576D8', '#94A0B2', '#0B1F3A'],
+        backgroundColor: ['#1E8E3E', '#C2670F', '#D8473C', '#2653D6', '#94A0B2', '#13235E'],
         borderWidth: 0,
       }]
     },
@@ -698,7 +709,7 @@ async function loadTrendChart() {
   const months = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(d.toISOString().slice(0, 10));
+    months.push(monthStr(d.getFullYear(), d.getMonth()));
   }
   const { data, error } = await supabase
     .from('evaluations').select('reporting_month, evaluation_result')

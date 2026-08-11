@@ -3,247 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MPEP · Performance Dashboard</title>
+<title>Sign in · MPEP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/src/css/style.css">
 </head>
 <body>
-
-<div class="app-shell">
-
-  <!-- ============ SIDEBAR ============ -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand">
-      <div class="mark">AS</div>
-      <div>
-        <span class="name" style="color:#fff;">Aurion Solar</span>
-        <span class="sub">Performance Dashboard</span>
-      </div>
-    </div>
-
-    <nav class="nav-group">
-      <button class="nav-item active" data-view="dashboard">📊 <span>Dashboard</span></button>
-      <button class="nav-item" data-view="employees">👥 <span>Employees</span></button>
-      <button class="nav-item" data-view="probationary">🟡 <span>Probationary</span></button>
-      <button class="nav-item" data-view="regular">🟢 <span>Regular</span></button>
-      <button class="nav-item" data-view="hrAttention">⚠️ <span>HR Attention</span></button>
-      <button class="nav-item" data-view="thirdFifth">📆 <span>3rd &amp; 5th Month</span></button>
-      <button class="nav-item" data-view="highlights">📝 <span>Progress Highlights</span></button>
-      <button class="nav-item" data-view="signoff">✅ <span>Sign-Off</span></button>
-    </nav>
-
-    <div class="sidebar-footer">
-      <div class="user-chip"><span class="dot"></span><span id="userEmail">—</span></div>
-      <button class="logout-btn" id="logoutBtn">Sign out</button>
-    </div>
-  </aside>
-
-  <!-- ============ MAIN ============ -->
-  <div class="main">
-    <div class="topbar">
-      <div style="display:flex;align-items:center;">
-        <button class="menu-toggle" id="menuToggle">☰</button>
+  <div class="login-shell">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="mark">AS</div>
         <div>
-          <h1 id="viewTitle">Dashboard</h1>
-          <div class="subtitle" id="viewSubtitle">Overview for the selected reporting month</div>
+          <span class="name" style="font-family:var(--font-display);font-weight:700;color:var(--navy-900);">Aurion Solar</span>
+          <small>Performance Evaluation Dashboard</small>
         </div>
       </div>
-      <div class="month-picker">
-        <label for="monthSelect">Reporting Month</label>
-        <select id="monthSelect"></select>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="username" placeholder="you@aurionsolar.com">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" required autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <div class="auth-error" id="authError"></div>
+        <button type="submit" class="btn-primary" id="submitBtn">Sign in</button>
+      </form>
+
+      <div class="auth-toggle">
+        Accounts are created by HR admin in Supabase. Contact your administrator if you don't have one yet.
       </div>
     </div>
-
-    <div class="content">
-
-      <!-- ===================== DASHBOARD ===================== -->
-      <section class="view active" id="view-dashboard">
-        <div class="kpi-grid" id="kpiGrid"></div>
-
-        <div class="panel" style="margin-bottom:16px;">
-          <h3>Monthly Summary — by Category</h3>
-          <div class="table-wrap" style="box-shadow:none;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Category</th><th>Total</th><th>On Track</th><th>Needs Improvement</th>
-                  <th>Failed</th><th>PIP / Action Plan</th><th>For Review</th><th>Completed</th>
-                </tr>
-              </thead>
-              <tbody id="categorySummaryTbody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="panel-grid">
-          <div class="panel">
-            <h3>Status Breakdown — Selected Month</h3>
-            <div class="chart-wrap"><canvas id="statusChart"></canvas></div>
-          </div>
-          <div class="panel">
-            <h3>Probationary vs Regular</h3>
-            <div class="chart-wrap"><canvas id="categoryChart"></canvas></div>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>Monthly Evaluation Trend</h3>
-          <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
-        </div>
-      </section>
-
-      <!-- ===================== EMPLOYEES ===================== -->
-      <section class="view" id="view-employees">
-        <p class="section-lead">Master employee list — add employees here first, then log their monthly evaluations.</p>
-        <div class="table-toolbar">
-          <div class="left">
-            <input class="search-input" id="empSearch" placeholder="Search employee…">
-            <select class="filter-select" id="empTypeFilter">
-              <option value="">All types</option>
-              <option value="Probationary">Probationary</option>
-              <option value="Regular">Regular</option>
-            </select>
-          </div>
-          <button class="btn btn-outline" id="bulkEmployeesBtn">⬆ Bulk Upload</button>
-          <button class="btn btn-amber" id="addEmployeeBtn">+ Add Employee</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Position</th><th>Department</th><th>Date Hired</th><th>Type</th><th></th></tr></thead>
-            <tbody id="employeesTbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ===================== PROBATIONARY ===================== -->
-      <section class="view" id="view-probationary">
-        <p class="section-lead">Probationary employee performance evaluation monitoring for the selected reporting month.</p>
-        <div class="table-toolbar">
-          <div class="left"><input class="search-input" id="probSearch" placeholder="Search employee…"></div>
-          <button class="btn btn-outline" id="bulkProbBtn">⬆ Bulk Upload</button>
-          <button class="btn btn-amber" id="addProbBtn">+ Add Evaluation</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Stage</th><th>Result</th><th>KPI</th><th>Lates</th><th>Absences</th><th>Undertime</th><th></th></tr></thead>
-            <tbody id="probTbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ===================== REGULAR ===================== -->
-      <section class="view" id="view-regular">
-        <p class="section-lead">Regular employee performance evaluation monitoring for the selected reporting month.</p>
-        <div class="table-toolbar">
-          <div class="left"><input class="search-input" id="regSearch" placeholder="Search employee…"></div>
-          <button class="btn btn-outline" id="bulkRegBtn">⬆ Bulk Upload</button>
-          <button class="btn btn-amber" id="addRegBtn">+ Add Evaluation</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Period</th><th>Result</th><th>KPI</th><th>Lates</th><th>Absences</th><th>Undertime</th><th>Action</th><th></th></tr></thead>
-            <tbody id="regTbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ===================== HR ATTENTION ===================== -->
-      <section class="view" id="view-hrAttention">
-        <p class="section-lead">Employees requiring HR / management attention this month.</p>
-        <div class="table-toolbar">
-          <div class="left"></div>
-          <button class="btn btn-outline" id="bulkHrBtn">⬆ Bulk Upload</button>
-          <button class="btn btn-amber" id="addHrBtn">+ Add Record</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Employee</th><th>Status</th><th>Key Issue</th><th>Coaching / Support</th><th>Target</th><th>Next Review</th><th>Recommendation</th><th></th></tr></thead>
-            <tbody id="hrTbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ===================== 3RD & 5TH MONTH ===================== -->
-      <section class="view" id="view-thirdFifth">
-        <p class="section-lead">3rd month and 5th month evaluation tracker (independent of reporting month filter).</p>
-        <div class="table-toolbar">
-          <div class="left"></div>
-          <button class="btn btn-outline" id="bulkTfBtn">⬆ Bulk Upload</button>
-          <button class="btn btn-amber" id="addTfBtn">+ Add Employee</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Employee</th><th>Department</th><th>Position</th><th>Date Hired</th><th>3rd Mo. Date</th><th>3rd Mo. Result</th><th>5th Mo. Date</th><th>5th Mo. Result</th><th>Final Rec.</th><th>Remarks</th><th></th></tr></thead>
-            <tbody id="tfTbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ===================== PROGRESS HIGHLIGHTS ===================== -->
-      <section class="view" id="view-highlights">
-        <p class="section-lead">Narrative highlights for the selected reporting month. Autosaves per field on blur, or click Save All.</p>
-        <div class="text-block">
-          <h3>Key Improvements / Positive Progress</h3>
-          <textarea id="hl_key_improvements" rows="3"></textarea>
-        </div>
-        <div class="text-block">
-          <h3>Common Performance Gaps</h3>
-          <textarea id="hl_common_gaps" rows="3"></textarea>
-        </div>
-        <div class="text-block">
-          <h3>Attendance / Punctuality Concerns</h3>
-          <textarea id="hl_attendance_concerns" rows="3"></textarea>
-        </div>
-        <div class="text-block">
-          <h3>Training / Development Needs</h3>
-          <textarea id="hl_training_needs" rows="3"></textarea>
-        </div>
-        <div class="text-block">
-          <h3>Overall HR / Management Recommendation</h3>
-          <textarea id="hl_overall_recommendation" rows="3"></textarea>
-        </div>
-        <button class="btn btn-amber" id="saveHighlightsBtn">Save All</button>
-      </section>
-
-      <!-- ===================== SIGN-OFF ===================== -->
-      <section class="view" id="view-signoff">
-        <p class="section-lead">Report preparation and review sign-off for the selected reporting month.</p>
-        <div class="text-block">
-          <div class="form-grid">
-            <div class="field-sm"><label>Prepared By</label><input id="so_prepared_by"></div>
-            <div class="field-sm"><label>Date</label><input type="date" id="so_prepared_date"></div>
-            <div class="field-sm"><label>Department Head</label><input id="so_department_head"></div>
-            <div class="field-sm"><label>Date</label><input type="date" id="so_department_head_date"></div>
-            <div class="field-sm"><label>HR Representative</label><input id="so_hr_representative"></div>
-            <div class="field-sm"><label>Date</label><input type="date" id="so_hr_representative_date"></div>
-            <div class="field-sm"><label>Management Approval</label><input id="so_management_approval"></div>
-            <div class="field-sm"><label>Date</label><input type="date" id="so_management_date"></div>
-          </div>
-        </div>
-        <button class="btn btn-amber" id="saveSignoffBtn">Save</button>
-      </section>
-
-    </div>
   </div>
-</div>
 
-<!-- ============ GENERIC MODAL ============ -->
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal">
-    <div class="modal-header">
-      <h3 id="modalTitle">Add</h3>
-      <button class="modal-close" id="modalClose">&times;</button>
-    </div>
-    <div class="modal-body" id="modalBody"></div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" id="modalCancel">Cancel</button>
-      <button class="btn btn-amber" id="modalSave">Save</button>
-    </div>
-  </div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script type="module" src="/src/js/app.js"></script>
+  <script type="module" src="/src/js/login.js"></script>
 </body>
 </html>

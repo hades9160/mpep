@@ -77,6 +77,27 @@ locally before deploying.
    its own dashboard since `.env` isn't in your repo.)
 5. Click **Deploy**.
 
+## Bulk Import
+
+Use this instead of adding records one at a time.
+
+1. In the app sidebar, click **Bulk Import**.
+2. Click **Download Template** — this pulls the same `MPEP_Bulk_Upload_Template.xlsx`
+   file described above (it's bundled with the site at `public/MPEP_Bulk_Upload_Template.xlsx`).
+3. Fill in whichever sheets you need (Employees, Evaluations, HR Attention,
+   3rd & 5th Month) — delete the yellow EXAMPLE row or leave it, the import
+   ignores it automatically.
+4. Come back to **Bulk Import**, choose your filled-in file, click **Run Import**.
+5. You'll get a per-sheet summary: how many rows were added, and a table of
+   any skipped rows with the exact reason (e.g. "no employee with this name
+   found", "invalid Evaluation Result value").
+
+**How matching works:** Evaluations, HR Attention, and 3rd & 5th Month rows
+are linked to an employee by exact name match (case-insensitive) against
+the Employees sheet in the same file *and* employees already in the
+database. Import the Employees sheet first (or in the same upload) before
+Evaluations that reference brand-new employees.
+
 ## Database setup
 
 Same as before — this hasn't changed. If you haven't already, run

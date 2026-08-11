@@ -3,8 +3,8 @@
 // ============================================================================
 import { supabase } from './supabaseClient.js';
 import { Chart, registerables } from 'chart.js';
-import { runBulkUpload } from './bulkUpload.js';
 Chart.register(...registerables);
+import { runBulkImport } from './bulkImport.js';
 
 let CURRENT_USER = null;
 let SELECTED_MONTH = null;     // 'YYYY-MM-01'
@@ -17,17 +17,17 @@ let editingTable = null;        // supabase table currently being edited
 // ---------------------------------------------------------------------------
 (async function init() {
   const { data } = await supabase.auth.getSession();
-  if (!data.session) { window.location.href = '/login.html'; return; }
+  if (!data.session) { window.location.href = '/'; return; }
   CURRENT_USER = data.session.user;
   document.getElementById('userEmail').textContent = CURRENT_USER.email;
 
   supabase.auth.onAuthStateChange((event, session) => {
-    if (!session) window.location.href = '/login.html';
+    if (!session) window.location.href = '/';
   });
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
     await supabase.auth.signOut();
-    window.location.href = '/login.html';
+    window.location.href = '/';
   });
 
   setupNav();
@@ -37,34 +37,8 @@ let editingTable = null;        // supabase table currently being edited
   bindStaticButtons();
 
   await loadEmployees();
-  await jumpToMonthWithData();   // pick a month that actually has data, if the current one doesn't
   await refreshCurrentView();
 })();
-
-// ---------------------------------------------------------------------------
-// If the default (current calendar) month has no evaluations logged yet,
-// but some other month does, jump the selector to the most recent month
-// that actually has data — otherwise the dashboard looks empty even though
-// data exists. Only runs once, on initial load.
-// ---------------------------------------------------------------------------
-async function jumpToMonthWithData() {
-  const { data: currentMonthRows } = await supabase
-    .from('evaluations').select('id').eq('reporting_month', SELECTED_MONTH).limit(1);
-  if (currentMonthRows && currentMonthRows.length) return; // current month already has data
-
-  const { data: latest } = await supabase
-    .from('evaluations').select('reporting_month')
-    .order('reporting_month', { ascending: false }).limit(1);
-  if (latest && latest.length) {
-    const sel = document.getElementById('monthSelect');
-    const target = latest[0].reporting_month;
-    // Only jump if that month exists as an option in the (rolling 12mo back / 3mo ahead) selector
-    if ([...sel.options].some(o => o.value === target)) {
-      sel.value = target;
-      SELECTED_MONTH = target;
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // NAVIGATION
@@ -78,6 +52,7 @@ const VIEW_TITLES = {
   thirdFifth:   ['3rd & 5th Month Tracker', 'Probationary regularization tracker'],
   highlights:   ['Progress Highlights', 'Monthly narrative summary'],
   signoff:      ['Sign-Off', 'Report preparation and review'],
+  bulkImport:   ['Bulk Import', 'Add many records at once from a spreadsheet'],
 };
 
 function setupNav() {
@@ -117,30 +92,24 @@ async function loadView(view) {
   if (view === 'thirdFifth') return loadThirdFifth();
   if (view === 'highlights') return loadHighlights();
   if (view === 'signoff') return loadSignoff();
+  if (view === 'bulkImport') return; // static view, no data load needed
 }
 
 // ---------------------------------------------------------------------------
 // MONTH SELECTOR (rolling window, 12 months back to 3 months ahead)
 // ---------------------------------------------------------------------------
-function monthStr(year, monthIndex) {
-  // Builds a 'YYYY-MM-01' string from local year/month without going through
-  // toISOString(), which converts to UTC first and can roll the date back
-  // to the previous day for timezones ahead of UTC (e.g. Philippines, UTC+8).
-  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
-}
-
 function populateMonthSelector() {
   const sel = document.getElementById('monthSelect');
   const now = new Date();
   const opts = [];
   for (let i = -12; i <= 3; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const value = monthStr(d.getFullYear(), d.getMonth());
+    const value = d.toISOString().slice(0, 10);
     const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
     opts.push({ value, label });
   }
   sel.innerHTML = opts.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
-  const currentValue = monthStr(now.getFullYear(), now.getMonth());
+  const currentValue = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
   sel.value = currentValue;
   SELECTED_MONTH = currentValue;
 
@@ -279,7 +248,6 @@ async function saveEmployee() {
   await loadEmployeesFull();
 }
 async function loadEmployeesFull() { await loadEmployees(); renderEmployeesTable(); }
-window.loadEmployeesFull = loadEmployeesFull;
 
 async function deleteRow(table, id, refreshFn) {
   if (!confirm('Delete this record? This cannot be undone.')) return;
@@ -308,7 +276,6 @@ async function loadEvaluations(type) {
   if (type === 'Probationary') renderProbTable(data || []);
   else renderRegTable(data || []);
 }
-window.loadEvaluations = loadEvaluations;
 
 function resultBadge(result) {
   const map = {
@@ -468,7 +435,6 @@ async function loadHrAttention() {
     </tr>
   `).join('');
 }
-window.loadHrAttention = loadHrAttention;
 function hrFormHtml(r = {}) {
   return `
     <div class="form-grid">
@@ -538,7 +504,6 @@ async function loadThirdFifth() {
     </tr>
   `).join('');
 }
-window.loadThirdFifth = loadThirdFifth;
 function tfFormHtml(r = {}) {
   return `
     <div class="form-grid">
@@ -662,28 +627,13 @@ async function loadDashboard() {
 
   const kpiGrid = document.getElementById('kpiGrid');
   kpiGrid.innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Total Employees</div><div class="kpi-value">${EMPLOYEES.length}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Evaluated (this month)</div><div class="kpi-value">${evals.length}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Evaluated</div><div class="kpi-value">${evals.length}</div></div>
     <div class="kpi-card green"><div class="kpi-label">On Track</div><div class="kpi-value">${counts.onTrack}</div></div>
     <div class="kpi-card yellow"><div class="kpi-label">Needs Improvement</div><div class="kpi-value">${counts.needsImprovement}</div></div>
     <div class="kpi-card red"><div class="kpi-label">Failed</div><div class="kpi-value">${counts.failed}</div></div>
     <div class="kpi-card blue"><div class="kpi-label">PIP / Action Plan</div><div class="kpi-value">${counts.pip}</div></div>
     <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value">${counts.completed}</div></div>
   `;
-
-  // Friendly empty-state hint: data exists but not for the selected month.
-  const existingBanner = document.getElementById('dashEmptyBanner');
-  if (existingBanner) existingBanner.remove();
-  if (evals.length === 0 && EMPLOYEES.length > 0) {
-    const monthLabel = new Date(SELECTED_MONTH + 'T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
-    const banner = document.createElement('div');
-    banner.id = 'dashEmptyBanner';
-    banner.className = 'panel';
-    banner.style.cssText = 'margin-bottom:16px;border-left:4px solid #F5A623;';
-    banner.innerHTML = `<strong>No evaluations logged for ${monthLabel}.</strong> You have ${EMPLOYEES.length} employee(s) on file —
-      use the Reporting Month picker above to check other months, or add/bulk-upload evaluations for this one.`;
-    kpiGrid.insertAdjacentElement('afterend', banner);
-  }
 
   // Monthly Summary by Category table (mirrors the "CATEGORY | TOTAL | ON TRACK..." table
   // from the original Excel Monthly Summary sheet)
@@ -721,7 +671,7 @@ async function loadDashboard() {
       labels: ['On Track', 'Needs Improvement', 'Failed', 'PIP / Action Plan', 'For Review', 'Completed'],
       datasets: [{
         data: [counts.onTrack, counts.needsImprovement, counts.failed, counts.pip, counts.forReview, counts.completed],
-        backgroundColor: ['#1E8E3E', '#C2670F', '#D8473C', '#2653D6', '#94A0B2', '#13235E'],
+        backgroundColor: ['#2E9E5B', '#E0A800', '#D8473C', '#3576D8', '#94A0B2', '#0B1F3A'],
         borderWidth: 0,
       }]
     },
@@ -751,7 +701,7 @@ async function loadTrendChart() {
   const months = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(monthStr(d.getFullYear(), d.getMonth()));
+    months.push(d.toISOString().slice(0, 10));
   }
   const { data, error } = await supabase
     .from('evaluations').select('reporting_month, evaluation_result')
@@ -780,61 +730,67 @@ async function loadTrendChart() {
 }
 
 // ---------------------------------------------------------------------------
-// BULK UPLOAD (Employees, Probationary, Regular, HR Attention, 3rd/5th Month)
+// BULK IMPORT
 // ---------------------------------------------------------------------------
-const BULK_REFRESH = {
-  employees: loadEmployeesFull,
-  probationary: () => loadEvaluations('Probationary'),
-  regular: () => loadEvaluations('Regular'),
-  hrAttention: loadHrAttention,
-  thirdFifth: loadThirdFifth,
+const SHEET_LABELS = {
+  employees: 'Employees',
+  evaluations: 'Evaluations',
+  hrAttention: 'HR Attention',
+  thirdFifth: '3rd & 5th Month',
 };
 
-function bulkUploadModalHtml(label) {
-  return `
-    <div class="form-grid">
-      <div class="field-sm span-2">
-        <label>Select .xlsx or .csv file — download the template first if you haven't.</label>
-        <input type="file" id="bulkFileInput" accept=".xlsx,.xls,.csv">
-      </div>
-      <div class="field-sm span-2" id="bulkStatus" style="color:#6b7280;font-size:13px;">
-        Uploading into: <strong>${escapeHtml(label)}</strong>. Existing employee names are matched automatically;
-        unrecognized names are added to the Employees list.
-      </div>
-    </div>`;
-}
+document.getElementById('runBulkImportBtn').addEventListener('click', async () => {
+  const fileInput = document.getElementById('bulkImportFile');
+  const statusEl = document.getElementById('bulkImportStatus');
+  const resultsEl = document.getElementById('bulkImportResults');
+  const btn = document.getElementById('runBulkImportBtn');
 
-function openBulkUploadModal(configKey, label) {
-  openModal(`Bulk Upload — ${label}`, bulkUploadModalHtml(label), async () => {
-    const fileInput = document.getElementById('bulkFileInput');
-    const statusEl = document.getElementById('bulkStatus');
-    const file = fileInput?.files?.[0];
-    if (!file) { toast('Choose a file first', 'error'); return; }
-    statusEl.textContent = 'Uploading…';
-    try {
-      const result = await runBulkUpload(configKey, file);
-      const parts = [`${result.inserted} row(s) added`];
-      if (result.skipped) parts.push(`${result.skipped} skipped`);
-      toast(parts.join(', '), result.errors.length && !result.inserted ? 'error' : 'success');
-      if (result.errors.length) {
-        console.warn('Bulk upload issues:', result.errors);
-      }
-      closeModal();
-      await loadEmployees();          // refresh master list (may have new employees)
-      const refreshFn = BULK_REFRESH[configKey];
-      if (refreshFn) await refreshFn();
-    } catch (err) {
-      statusEl.textContent = 'Failed: ' + err.message;
-      toast('Bulk upload failed: ' + err.message, 'error');
-    }
-  });
-}
+  const file = fileInput.files[0];
+  if (!file) { toast('Choose a file first', 'error'); return; }
 
-document.getElementById('bulkEmployeesBtn')?.addEventListener('click', () => openBulkUploadModal('employees', 'Employees'));
-document.getElementById('bulkProbBtn')?.addEventListener('click', () => openBulkUploadModal('probationary', 'Probationary Evaluations'));
-document.getElementById('bulkRegBtn')?.addEventListener('click', () => openBulkUploadModal('regular', 'Regular Evaluations'));
-document.getElementById('bulkHrBtn')?.addEventListener('click', () => openBulkUploadModal('hrAttention', 'HR Attention'));
-document.getElementById('bulkTfBtn')?.addEventListener('click', () => openBulkUploadModal('thirdFifth', '3rd & 5th Month Tracker'));
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+  statusEl.textContent = 'Reading and validating your file…';
+  resultsEl.innerHTML = '';
+
+  try {
+    const results = await runBulkImport(file, EMPLOYEES);
+
+    let totalAdded = 0, totalSkipped = 0;
+    Object.values(results).forEach(r => { totalAdded += r.added; totalSkipped += r.skipped.length; });
+
+    statusEl.textContent = '';
+    resultsEl.innerHTML = Object.entries(results).map(([key, r]) => {
+      if (r.added === 0 && r.skipped.length === 0) return ''; // sheet was empty, don't clutter
+      const skippedRows = r.skipped.map(s => `
+        <tr><td>Row ${s.row}</td><td>${escapeHtml(s.name || '—')}</td><td>${escapeHtml(s.reason)}</td></tr>
+      `).join('');
+      return `
+        <div class="text-block">
+          <h3>${SHEET_LABELS[key]} — ${r.added} row(s) added, ${r.skipped.length} skipped</h3>
+          ${r.skipped.length ? `
+            <div class="table-wrap" style="box-shadow:none;margin-top:8px;">
+              <table>
+                <thead><tr><th>Row</th><th>Name</th><th>Reason skipped</th></tr></thead>
+                <tbody>${skippedRows}</tbody>
+              </table>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+
+    toast(`Import finished — ${totalAdded} added, ${totalSkipped} skipped`, totalAdded > 0 ? 'success' : 'error');
+
+    // Refresh caches/views so newly imported data shows up immediately
+    await loadEmployees();
+    await refreshCurrentView();
+  } catch (err) {
+    statusEl.textContent = '';
+    toast('Import failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Import';
+  }
+});
 
 // ---------------------------------------------------------------------------
 // HELPERS

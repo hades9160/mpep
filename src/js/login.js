@@ -6,7 +6,7 @@ const submitBtn = document.getElementById('submitBtn');
 
 // If already logged in, go straight to dashboard.
 supabase.auth.getSession().then(({ data }) => {
-  if (data.session) window.location.href = '/index.html';
+  if (data.session) window.location.href = '/dashboard.html';
 });
 
 form.addEventListener('submit', async (e) => {
@@ -26,5 +26,5 @@ form.addEventListener('submit', async (e) => {
     submitBtn.textContent = 'Sign in';
     return;
   }
-  window.location.href = '/index.html';
+  window.location.href = '/dashboard.html';
 });

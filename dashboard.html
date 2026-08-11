@@ -32,6 +32,7 @@
       <button class="nav-item" data-view="highlights">📝 <span>Progress Highlights</span></button>
       <button class="nav-item" data-view="signoff">✅ <span>Sign-Off</span></button>
       <button class="nav-item" data-view="bulkImport">📥 <span>Bulk Import</span></button>
+      <button class="nav-item" data-view="backup">💾 <span>Backup &amp; Restore</span></button>
     </nav>
 
     <div class="sidebar-footer">
@@ -107,6 +108,9 @@
               <option value="Probationary">Probationary</option>
               <option value="Regular">Regular</option>
             </select>
+            <select class="filter-select" id="empDeptFilter">
+              <option value="">All departments</option>
+            </select>
           </div>
           <button class="btn btn-amber" id="addEmployeeBtn">+ Add Employee</button>
         </div>
@@ -122,7 +126,15 @@
       <section class="view" id="view-probationary">
         <p class="section-lead">Probationary employee performance evaluation monitoring for the selected reporting month.</p>
         <div class="table-toolbar">
-          <div class="left"><input class="search-input" id="probSearch" placeholder="Search employee…"></div>
+          <div class="left">
+            <input class="search-input" id="probSearch" placeholder="Search employee…">
+            <select class="filter-select" id="probDeptFilter"><option value="">All departments</option></select>
+            <select class="filter-select" id="probResultFilter">
+              <option value="">All results</option>
+              <option value="Passed">Passed</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </div>
           <button class="btn btn-amber" id="addProbBtn">+ Add Evaluation</button>
         </div>
         <div class="table-wrap">
@@ -137,7 +149,19 @@
       <section class="view" id="view-regular">
         <p class="section-lead">Regular employee performance evaluation monitoring for the selected reporting month.</p>
         <div class="table-toolbar">
-          <div class="left"><input class="search-input" id="regSearch" placeholder="Search employee…"></div>
+          <div class="left">
+            <input class="search-input" id="regSearch" placeholder="Search employee…">
+            <select class="filter-select" id="regDeptFilter"><option value="">All departments</option></select>
+            <select class="filter-select" id="regResultFilter">
+              <option value="">All results</option>
+              <option value="Satisfactory">Satisfactory</option>
+              <option value="Needs Improvement">Needs Improvement</option>
+              <option value="Failed">Failed</option>
+              <option value="PIP">PIP</option>
+              <option value="For Review">For Review</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
           <button class="btn btn-amber" id="addRegBtn">+ Add Evaluation</button>
         </div>
         <div class="table-wrap">
@@ -152,7 +176,10 @@
       <section class="view" id="view-hrAttention">
         <p class="section-lead">Employees requiring HR / management attention this month.</p>
         <div class="table-toolbar">
-          <div class="left"></div>
+          <div class="left">
+            <input class="search-input" id="hrSearch" placeholder="Search employee…">
+            <select class="filter-select" id="hrStatusFilter"><option value="">All statuses</option></select>
+          </div>
           <button class="btn btn-amber" id="addHrBtn">+ Add Record</button>
         </div>
         <div class="table-wrap">
@@ -167,7 +194,15 @@
       <section class="view" id="view-thirdFifth">
         <p class="section-lead">3rd month and 5th month evaluation tracker (independent of reporting month filter).</p>
         <div class="table-toolbar">
-          <div class="left"></div>
+          <div class="left">
+            <input class="search-input" id="tfSearch" placeholder="Search employee…">
+            <select class="filter-select" id="tfStageFilter">
+              <option value="">All</option>
+              <option value="pending3rd">Pending 3rd Month</option>
+              <option value="pending5th">Pending 5th Month</option>
+              <option value="done">Fully Reviewed</option>
+            </select>
+          </div>
           <button class="btn btn-amber" id="addTfBtn">+ Add Employee</button>
         </div>
         <div class="table-wrap">
@@ -266,6 +301,38 @@
         </div>
 
         <div id="bulkImportResults"></div>
+      </section>
+
+      <!-- ===================== BACKUP & RESTORE ===================== -->
+      <section class="view" id="view-backup">
+        <p class="section-lead">
+          Export a full backup of every record in the system (Employees, Evaluations, HR Attention,
+          3rd &amp; 5th Month, Progress Highlights, Sign-Off) to a single file — or restore from one.
+        </p>
+
+        <div class="text-block">
+          <h3>Export all data</h3>
+          <p style="font-size:13px;color:var(--slate-600);margin:6px 0 12px;">
+            Downloads a complete snapshot of every table as one JSON file. Keep it somewhere safe as a backup.
+          </p>
+          <button class="btn btn-amber" id="exportAllBtn">⬇ Export All Data</button>
+          <span id="exportAllStatus" style="margin-left:10px;font-size:13px;color:var(--slate-600);"></span>
+        </div>
+
+        <div class="text-block">
+          <h3>Restore / import all data</h3>
+          <p style="font-size:13px;color:var(--slate-600);margin:6px 0 12px;">
+            Upload a previously exported backup file to restore it. Records with a matching ID are
+            updated in place; new records are added. This does not delete anything that isn't in the file.
+          </p>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <input type="file" id="restoreAllFile" accept=".json">
+            <button class="btn btn-outline" id="restoreAllBtn">⬆ Restore From File</button>
+          </div>
+          <div id="restoreAllStatus" style="margin-top:12px;font-size:13px;color:var(--slate-600);"></div>
+        </div>
+
+        <div id="restoreAllResults"></div>
       </section>
 
     </div>

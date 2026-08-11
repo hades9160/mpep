@@ -53,6 +53,7 @@ const VIEW_TITLES = {
   highlights:   ['Progress Highlights', 'Monthly narrative summary'],
   signoff:      ['Sign-Off', 'Report preparation and review'],
   bulkImport:   ['Bulk Import', 'Add many records at once from a spreadsheet'],
+  backup:       ['Backup & Restore', 'Export or restore a full data snapshot'],
 };
 
 function setupNav() {
@@ -93,6 +94,7 @@ async function loadView(view) {
   if (view === 'highlights') return loadHighlights();
   if (view === 'signoff') return loadSignoff();
   if (view === 'bulkImport') return; // static view, no data load needed
+  if (view === 'backup') return; // static view, no data load needed
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +166,22 @@ async function loadEmployees() {
   const { data, error } = await supabase.from('employees').select('*').order('name');
   if (error) { toast(error.message, 'error'); return; }
   EMPLOYEES = data || [];
+  populateDeptFilters();
+}
+
+// Keeps the department <select> filters on Employees / Probationary / Regular
+// in sync with whatever departments actually exist right now, without
+// clobbering the user's current selection if it's still valid.
+function populateDeptFilters() {
+  const depts = [...new Set(EMPLOYEES.map(e => (e.department || '').trim()).filter(Boolean))].sort();
+  ['empDeptFilter', 'probDeptFilter', 'regDeptFilter'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = `<option value="">All departments</option>` +
+      depts.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+    if (depts.includes(current)) sel.value = current;
+  });
 }
 
 function employeeOptions(type) {
@@ -179,8 +197,10 @@ async function loadEmployeesView() {
 function renderEmployeesTable() {
   const search = (document.getElementById('empSearch').value || '').toLowerCase();
   const typeFilter = document.getElementById('empTypeFilter').value;
+  const deptFilter = document.getElementById('empDeptFilter').value;
   const rows = EMPLOYEES.filter(e =>
     (!typeFilter || e.employment_type === typeFilter) &&
+    (!deptFilter || e.department === deptFilter) &&
     (!search || e.name.toLowerCase().includes(search))
   );
   const tbody = document.getElementById('employeesTbody');
@@ -206,7 +226,7 @@ document.addEventListener('input', (e) => {
   if (e.target.id === 'empSearch') renderEmployeesTable();
 });
 document.addEventListener('change', (e) => {
-  if (e.target.id === 'empTypeFilter') renderEmployeesTable();
+  if (e.target.id === 'empTypeFilter' || e.target.id === 'empDeptFilter') renderEmployeesTable();
 });
 
 function employeeFormHtml(e = {}) {
@@ -280,10 +300,15 @@ const PROB_RESULTS = ['Passed', 'Failed'];
 const REG_RESULTS = ['Satisfactory', 'Needs Improvement', 'Failed', 'PIP', 'For Review', 'Completed'];
 
 async function loadEvaluations(type) {
+  // Filter on the employee's CURRENT employment_type (via the !inner join),
+  // not the type snapshotted on the evaluation row at creation time. That
+  // way, if someone is promoted from Probationary to Regular (or vice
+  // versa), their evaluations immediately show up on the correct page —
+  // they don't stay stuck on whichever page they were logged under.
   const { data, error } = await supabase
     .from('evaluations')
-    .select('*, employees(name, position, department)')
-    .eq('employment_type', type)
+    .select('*, employees!inner(name, position, department, employment_type)')
+    .eq('employees.employment_type', type)
     .eq('reporting_month', SELECTED_MONTH)
     .order('created_at', { ascending: false });
   if (error) { toast(error.message, 'error'); return; }
@@ -304,7 +329,13 @@ function resultBadge(result) {
 
 function renderProbTable(rows) {
   const search = (document.getElementById('probSearch').value || '').toLowerCase();
-  const filtered = rows.filter(r => !search || (r.employees?.name || '').toLowerCase().includes(search));
+  const deptFilter = document.getElementById('probDeptFilter').value;
+  const resultFilter = document.getElementById('probResultFilter').value;
+  const filtered = rows.filter(r =>
+    (!search || (r.employees?.name || '').toLowerCase().includes(search)) &&
+    (!deptFilter || r.employees?.department === deptFilter) &&
+    (!resultFilter || r.evaluation_result === resultFilter)
+  );
   const tbody = document.getElementById('probTbody');
   if (!filtered.length) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="10">No probationary evaluations logged for this month yet.</td></tr>`;
@@ -331,7 +362,13 @@ function renderProbTable(rows) {
 
 function renderRegTable(rows) {
   const search = (document.getElementById('regSearch').value || '').toLowerCase();
-  const filtered = rows.filter(r => !search || (r.employees?.name || '').toLowerCase().includes(search));
+  const deptFilter = document.getElementById('regDeptFilter').value;
+  const resultFilter = document.getElementById('regResultFilter').value;
+  const filtered = rows.filter(r =>
+    (!search || (r.employees?.name || '').toLowerCase().includes(search)) &&
+    (!deptFilter || r.employees?.department === deptFilter) &&
+    (!resultFilter || r.evaluation_result === resultFilter)
+  );
   const tbody = document.getElementById('regTbody');
   if (!filtered.length) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="11">No regular employee evaluations logged for this month yet.</td></tr>`;
@@ -360,6 +397,10 @@ function renderRegTable(rows) {
 document.addEventListener('input', (e) => {
   if (e.target.id === 'probSearch') loadEvaluations('Probationary');
   if (e.target.id === 'regSearch') loadEvaluations('Regular');
+});
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'probDeptFilter' || e.target.id === 'probResultFilter') loadEvaluations('Probationary');
+  if (e.target.id === 'regDeptFilter' || e.target.id === 'regResultFilter') loadEvaluations('Regular');
 });
 
 function evaluationFormHtml(type, r = {}) {
@@ -393,7 +434,7 @@ document.getElementById('addRegBtn').addEventListener('click', () => {
 });
 window.editEvaluation = function (r) {
   editingId = r.id; editingTable = 'evaluations';
-  const type = r.employment_type;
+  const type = r.employees?.employment_type || r.employment_type;
   openModal('Edit Evaluation', evaluationFormHtml(type, r), () => saveEvaluation(type));
   document.getElementById('f_employee_id').value = r.employee_id;
 };
@@ -429,12 +470,29 @@ async function loadHrAttention() {
     .eq('reporting_month', SELECTED_MONTH)
     .order('created_at', { ascending: false });
   if (error) { toast(error.message, 'error'); return; }
+
+  // Keep the status filter options in sync with whatever statuses actually
+  // appear in the data, without losing the user's current selection.
+  const statusSel = document.getElementById('hrStatusFilter');
+  const statuses = [...new Set((data || []).map(r => (r.employment_status || '').trim()).filter(Boolean))].sort();
+  const currentStatus = statusSel.value;
+  statusSel.innerHTML = `<option value="">All statuses</option>` +
+    statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+  if (statuses.includes(currentStatus)) statusSel.value = currentStatus;
+
+  const search = (document.getElementById('hrSearch').value || '').toLowerCase();
+  const statusFilter = statusSel.value;
+  const filtered = (data || []).filter(r =>
+    (!search || (r.employees?.name || '').toLowerCase().includes(search)) &&
+    (!statusFilter || r.employment_status === statusFilter)
+  );
+
   const tbody = document.getElementById('hrTbody');
-  if (!data.length) {
+  if (!filtered.length) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="8">No employees flagged for HR attention this month.</td></tr>`;
     return;
   }
-  tbody.innerHTML = data.map(r => `
+  tbody.innerHTML = filtered.map(r => `
     <tr>
       <td><strong>${escapeHtml(r.employees?.name || '—')}</strong></td>
       <td>${escapeHtml(r.employment_status || '—')}</td>
@@ -470,6 +528,12 @@ window.editHr = function (r) {
   openModal('Edit HR Attention Record', hrFormHtml(r), saveHr);
   document.getElementById('f_employee_id').value = r.employee_id;
 };
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'hrSearch') loadHrAttention();
+});
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'hrStatusFilter') loadHrAttention();
+});
 async function saveHr() {
   const payload = {
     employee_id: val('f_employee_id'), reporting_month: SELECTED_MONTH,
@@ -490,22 +554,44 @@ async function saveHr() {
 // 3RD & 5TH MONTH TRACKER
 // ---------------------------------------------------------------------------
 async function loadThirdFifth() {
+  // Join in the master Employees record so Department / Position / Date
+  // Hired can fall back to it whenever this table's own copy is blank —
+  // this is what fixes "date hired not reflecting": these fields used to
+  // be entered separately here and would show "—" if left empty, even
+  // though the Employees master list already had the date on file.
   const { data, error } = await supabase
     .from('third_fifth_month')
-    .select('*, employees(name)')
+    .select('*, employees(name, department, position, date_hired)')
     .order('created_at', { ascending: false });
   if (error) { toast(error.message, 'error'); return; }
+
+  (data || []).forEach(r => {
+    r.live_department = r.department || r.employees?.department || null;
+    r.live_position = r.position || r.employees?.position || null;
+    r.live_date_hired = r.date_hired || r.employees?.date_hired || null;
+  });
+
+  const search = (document.getElementById('tfSearch').value || '').toLowerCase();
+  const stageFilter = document.getElementById('tfStageFilter').value;
+  const filtered = (data || []).filter(r => {
+    if (search && !(r.employees?.name || '').toLowerCase().includes(search)) return false;
+    if (stageFilter === 'pending3rd' && r.third_month_result) return false;
+    if (stageFilter === 'pending5th' && (!r.third_month_result || r.fifth_month_result)) return false;
+    if (stageFilter === 'done' && !(r.third_month_result && r.fifth_month_result)) return false;
+    return true;
+  });
+
   const tbody = document.getElementById('tfTbody');
-  if (!data.length) {
+  if (!filtered.length) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="11">No regularization records yet.</td></tr>`;
     return;
   }
-  tbody.innerHTML = data.map(r => `
+  tbody.innerHTML = filtered.map(r => `
     <tr>
       <td><strong>${escapeHtml(r.employees?.name || '—')}</strong></td>
-      <td>${escapeHtml(r.department || '—')}</td>
-      <td>${escapeHtml(r.position || '—')}</td>
-      <td>${r.date_hired || '—'}</td>
+      <td>${escapeHtml(r.live_department || '—')}</td>
+      <td>${escapeHtml(r.live_position || '—')}</td>
+      <td>${r.live_date_hired || '—'}</td>
       <td>${r.third_month_date || '—'}</td>
       <td>${r.third_month_result ? resultBadge(r.third_month_result) : '—'}</td>
       <td>${r.fifth_month_date || '—'}</td>
@@ -519,13 +605,19 @@ async function loadThirdFifth() {
     </tr>
   `).join('');
 }
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'tfSearch') loadThirdFifth();
+});
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'tfStageFilter') loadThirdFifth();
+});
 function tfFormHtml(r = {}) {
   return `
     <div class="form-grid">
       <div class="field-sm span-2"><label>Employee</label><select id="f_employee_id">${employeeOptions()}</select></div>
-      <div class="field-sm"><label>Department</label><input id="f_department" value="${escapeHtml(r.department || '')}"></div>
-      <div class="field-sm"><label>Position</label><input id="f_position" value="${escapeHtml(r.position || '')}"></div>
-      <div class="field-sm"><label>Date Hired</label><input type="date" id="f_date_hired" value="${r.date_hired || ''}"></div>
+      <div class="field-sm"><label>Department</label><input id="f_department" value="${escapeHtml(r.live_department ?? r.department ?? '')}"></div>
+      <div class="field-sm"><label>Position</label><input id="f_position" value="${escapeHtml(r.live_position ?? r.position ?? '')}"></div>
+      <div class="field-sm"><label>Date Hired</label><input type="date" id="f_date_hired" value="${r.live_date_hired ?? r.date_hired ?? ''}"></div>
       <div class="field-sm"><label>3rd Month Date</label><input type="date" id="f_third_date" value="${r.third_month_date || ''}"></div>
       <div class="field-sm"><label>3rd Month Result</label>
         <select id="f_third_result">
@@ -544,13 +636,33 @@ function tfFormHtml(r = {}) {
       <div class="field-sm span-2"><label>Remarks</label><textarea id="f_remarks">${escapeHtml(r.remarks || '')}</textarea></div>
     </div>`;
 }
+// Fills Department / Position / Date Hired from the Employees master
+// record for whichever employee is selected — only overwrites a field if
+// it's currently empty, so it never clobbers something already typed in.
+function bindTfAutofill() {
+  const empSel = document.getElementById('f_employee_id');
+  if (!empSel) return;
+  empSel.addEventListener('change', () => {
+    const emp = EMPLOYEES.find(x => x.id === empSel.value);
+    if (!emp) return;
+    const deptEl = document.getElementById('f_department');
+    const posEl = document.getElementById('f_position');
+    const dateEl = document.getElementById('f_date_hired');
+    if (deptEl && !deptEl.value) deptEl.value = emp.department || '';
+    if (posEl && !posEl.value) posEl.value = emp.position || '';
+    if (dateEl && !dateEl.value) dateEl.value = emp.date_hired || '';
+  });
+}
 document.getElementById('addTfBtn').addEventListener('click', () => {
   openModal('Add Regularization Record', tfFormHtml(), saveTf);
+  bindTfAutofill();
+  document.getElementById('f_employee_id').dispatchEvent(new Event('change'));
 });
 window.editTf = function (r) {
   editingId = r.id; editingTable = 'third_fifth_month';
   openModal('Edit Regularization Record', tfFormHtml(r), saveTf);
   document.getElementById('f_employee_id').value = r.employee_id;
+  bindTfAutofill();
 };
 async function saveTf() {
   const payload = {
@@ -703,9 +815,12 @@ async function loadDashboard() {
   document.getElementById('dashMonthLabel').textContent = monthLabel(SELECTED_MONTH);
 
   const { data: evals, error } = await supabase
-    .from('evaluations').select('*')
+    .from('evaluations').select('*, employees(employment_type)')
     .eq('reporting_month', SELECTED_MONTH);
   if (error) { toast(error.message, 'error'); return; }
+  // Use the employee's CURRENT employment_type when it's available (falls
+  // back to the stored snapshot only if the linked employee is gone).
+  evals.forEach(e => { e.live_employment_type = e.employees?.employment_type || e.employment_type; });
 
   const counts = { onTrack: 0, needsImprovement: 0, failed: 0, pip: 0, forReview: 0, completed: 0 };
   evals.forEach(e => {
@@ -730,7 +845,7 @@ async function loadDashboard() {
   // Monthly Summary by Category table (mirrors the "CATEGORY | TOTAL | ON TRACK..." table
   // from the original Excel Monthly Summary sheet)
   function categoryRow(label, type) {
-    const rows = evals.filter(e => e.employment_type === type);
+    const rows = evals.filter(e => e.live_employment_type === type);
     const c = {
       total: rows.length,
       onTrack: rows.filter(e => ['Passed', 'Satisfactory'].includes(e.evaluation_result)).length,
@@ -771,8 +886,8 @@ async function loadDashboard() {
   });
 
   // Category bar (Probationary vs Regular)
-  const probCount = evals.filter(e => e.employment_type === 'Probationary').length;
-  const regCount = evals.filter(e => e.employment_type === 'Regular').length;
+  const probCount = evals.filter(e => e.live_employment_type === 'Probationary').length;
+  const regCount = evals.filter(e => e.live_employment_type === 'Regular').length;
   const catCtx = document.getElementById('categoryChart');
   if (categoryChartInstance) categoryChartInstance.destroy();
   categoryChartInstance = new Chart(catCtx, {
@@ -881,6 +996,104 @@ document.getElementById('runBulkImportBtn').addEventListener('click', async () =
   } finally {
     btn.disabled = false;
     btn.textContent = 'Run Import';
+  }
+});
+
+// ---------------------------------------------------------------------------
+// BACKUP & RESTORE (export / import a full snapshot of every table)
+// ---------------------------------------------------------------------------
+const BACKUP_TABLES = ['employees', 'evaluations', 'hr_attention', 'third_fifth_month', 'progress_highlights', 'sign_off'];
+
+document.getElementById('exportAllBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('exportAllBtn');
+  const statusEl = document.getElementById('exportAllStatus');
+  btn.disabled = true;
+  statusEl.textContent = 'Gathering data…';
+  try {
+    const backup = { exported_at: new Date().toISOString(), version: 1, tables: {} };
+    for (const table of BACKUP_TABLES) {
+      const { data, error } = await supabase.from(table).select('*');
+      if (error) throw new Error(`${table}: ${error.message}`);
+      backup.tables[table] = data || [];
+    }
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `mpep-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const totalRows = Object.values(backup.tables).reduce((sum, rows) => sum + rows.length, 0);
+    statusEl.textContent = `Exported ${totalRows} rows across ${BACKUP_TABLES.length} tables.`;
+    toast('Backup downloaded', 'success');
+  } catch (err) {
+    statusEl.textContent = '';
+    toast('Export failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('restoreAllBtn').addEventListener('click', async () => {
+  const fileInput = document.getElementById('restoreAllFile');
+  const statusEl = document.getElementById('restoreAllStatus');
+  const resultsEl = document.getElementById('restoreAllResults');
+  const btn = document.getElementById('restoreAllBtn');
+
+  const file = fileInput.files[0];
+  if (!file) { toast('Choose a backup file first', 'error'); return; }
+  if (!confirm('Restoring will overwrite any existing records that share an ID with the backup file, and add anything new. Continue?')) return;
+
+  btn.disabled = true;
+  statusEl.textContent = 'Reading backup file…';
+  resultsEl.innerHTML = '';
+
+  try {
+    const text = await file.text();
+    const backup = JSON.parse(text);
+    if (!backup || typeof backup.tables !== 'object') throw new Error('This does not look like a valid MPEP backup file.');
+
+    // Restore in dependency order: employees first (evaluations / hr_attention /
+    // third_fifth_month reference employee_id), then everything else.
+    const order = ['employees', 'evaluations', 'hr_attention', 'third_fifth_month', 'progress_highlights', 'sign_off'];
+    const summary = [];
+    for (const table of order) {
+      const rows = backup.tables[table];
+      if (!Array.isArray(rows) || rows.length === 0) { summary.push({ table, count: 0, error: null }); continue; }
+      const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' });
+      summary.push({ table, count: rows.length, error: error ? error.message : null });
+    }
+
+    statusEl.textContent = '';
+    resultsEl.innerHTML = `
+      <div class="table-wrap" style="box-shadow:none;">
+        <table>
+          <thead><tr><th>Table</th><th>Rows in file</th><th>Status</th></tr></thead>
+          <tbody>
+            ${summary.map(s => `
+              <tr>
+                <td>${escapeHtml(s.table)}</td>
+                <td>${s.count}</td>
+                <td>${s.error ? `<span class="badge badge-red">${escapeHtml(s.error)}</span>` : `<span class="badge badge-green">Restored</span>`}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    const failed = summary.filter(s => s.error).length;
+    toast(failed ? `Restore finished with ${failed} table(s) failing` : 'Restore complete', failed ? 'error' : 'success');
+
+    await loadEmployees();
+    await refreshCurrentView();
+  } catch (err) {
+    statusEl.textContent = '';
+    toast('Restore failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
   }
 });
 

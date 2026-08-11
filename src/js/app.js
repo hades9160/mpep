@@ -197,7 +197,7 @@ function renderEmployeesTable() {
       <td><span class="badge ${e.employment_type === 'Regular' ? 'badge-green' : 'badge-yellow'}">${e.employment_type}</span></td>
       <td>
         <button class="btn-icon-text" onclick="editEmployee('${e.id}')">Edit</button>
-        <button class="btn-danger-text" onclick="deleteRow('employees','${e.id}', loadEmployeesFull)">Delete</button>
+        <button class="btn-danger-text" onclick="deleteRow('employees','${e.id}', 'employees')">Delete</button>
       </td>
     </tr>
   `).join('');
@@ -249,12 +249,27 @@ async function saveEmployee() {
 }
 async function loadEmployeesFull() { await loadEmployees(); renderEmployeesTable(); }
 
-async function deleteRow(table, id, refreshFn) {
+// Refresh callbacks are looked up by string key rather than passed as bare
+// function references — inline onclick="" attributes evaluate in global
+// scope, and top-level functions in an ES module are NOT attached to
+// window automatically, so a bare function name there throws a silent
+// ReferenceError and the whole click handler (including the delete call
+// itself) never runs.
+const REFRESH_BY_KEY = {
+  employees: loadEmployeesFull,
+  probationary: () => loadEvaluations('Probationary'),
+  regular: () => loadEvaluations('Regular'),
+  hrAttention: () => loadHrAttention(),
+  thirdFifth: () => loadThirdFifth(),
+};
+
+async function deleteRow(table, id, refreshKey) {
   if (!confirm('Delete this record? This cannot be undone.')) return;
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error) { toast(error.message, 'error'); return; }
   toast('Deleted', 'success');
-  await refreshFn();
+  const refreshFn = REFRESH_BY_KEY[refreshKey];
+  if (refreshFn) await refreshFn();
 }
 window.deleteRow = deleteRow;
 
@@ -308,7 +323,7 @@ function renderProbTable(rows) {
       <td>${r.undertime ?? 0}</td>
       <td>
         <button class="btn-icon-text" onclick='editEvaluation(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Edit</button>
-        <button class="btn-danger-text" onclick="deleteRow('evaluations','${r.id}', () => loadEvaluations('Probationary'))">Delete</button>
+        <button class="btn-danger-text" onclick="deleteRow('evaluations','${r.id}', 'probationary')">Delete</button>
       </td>
     </tr>
   `).join('');
@@ -336,7 +351,7 @@ function renderRegTable(rows) {
       <td>${escapeHtml(r.action_notes || '—')}</td>
       <td>
         <button class="btn-icon-text" onclick='editEvaluation(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Edit</button>
-        <button class="btn-danger-text" onclick="deleteRow('evaluations','${r.id}', () => loadEvaluations('Regular'))">Delete</button>
+        <button class="btn-danger-text" onclick="deleteRow('evaluations','${r.id}', 'regular')">Delete</button>
       </td>
     </tr>
   `).join('');
@@ -430,7 +445,7 @@ async function loadHrAttention() {
       <td>${escapeHtml(r.recommendation || '—')}</td>
       <td>
         <button class="btn-icon-text" onclick='editHr(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Edit</button>
-        <button class="btn-danger-text" onclick="deleteRow('hr_attention','${r.id}', loadHrAttention)">Delete</button>
+        <button class="btn-danger-text" onclick="deleteRow('hr_attention','${r.id}', 'hrAttention')">Delete</button>
       </td>
     </tr>
   `).join('');
@@ -499,7 +514,7 @@ async function loadThirdFifth() {
       <td>${escapeHtml(r.remarks || '—')}</td>
       <td>
         <button class="btn-icon-text" onclick='editTf(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Edit</button>
-        <button class="btn-danger-text" onclick="deleteRow('third_fifth_month','${r.id}', loadThirdFifth)">Delete</button>
+        <button class="btn-danger-text" onclick="deleteRow('third_fifth_month','${r.id}', 'thirdFifth')">Delete</button>
       </td>
     </tr>
   `).join('');

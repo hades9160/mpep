@@ -60,6 +60,9 @@
 
       <!-- ===================== DASHBOARD ===================== -->
       <section class="view active" id="view-dashboard">
+        <h3 style="margin-bottom:10px;">Total Workforce — All Time</h3>
+        <div class="kpi-grid" id="workforceKpiGrid"></div>
+        <h3 style="margin:22px 0 10px;">Selected Month — <span id="dashMonthLabel"></span></h3>
         <div class="kpi-grid" id="kpiGrid"></div>
 
         <div class="panel" style="margin-bottom:16px;">
@@ -178,6 +181,14 @@
       <!-- ===================== PROGRESS HIGHLIGHTS ===================== -->
       <section class="view" id="view-highlights">
         <p class="section-lead">Narrative highlights for the selected reporting month. Autosaves per field on blur, or click Save All.</p>
+
+        <div class="panel" id="hlSummaryCard" style="margin-bottom:20px;border-left:4px solid var(--amber-500);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h3 style="margin:0;">📝 Saved Summary — <span id="hlSummaryMonth">—</span></h3>
+          </div>
+          <div id="hlSummaryBody"></div>
+        </div>
+
         <div class="text-block">
           <h3>Key Improvements / Positive Progress</h3>
           <textarea id="hl_key_improvements" rows="3"></textarea>
@@ -204,6 +215,15 @@
       <!-- ===================== SIGN-OFF ===================== -->
       <section class="view" id="view-signoff">
         <p class="section-lead">Report preparation and review sign-off for the selected reporting month.</p>
+
+        <div class="panel" id="soSummaryCard" style="margin-bottom:20px;border-left:4px solid var(--amber-500);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h3 style="margin:0;">✅ Saved Summary — <span id="soSummaryMonth">—</span></h3>
+            <span class="badge" id="soStatusBadge">—</span>
+          </div>
+          <div id="soSummaryBody"></div>
+        </div>
+
         <div class="text-block">
           <div class="form-grid">
             <div class="field-sm"><label>Prepared By</label><input id="so_prepared_by"></div>

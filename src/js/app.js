@@ -557,6 +557,35 @@ async function saveTf() {
 // ---------------------------------------------------------------------------
 // PROGRESS HIGHLIGHTS (one row per month)
 // ---------------------------------------------------------------------------
+function monthLabel(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
+const HL_FIELD_LABELS = {
+  key_improvements: 'Key Improvements / Positive Progress',
+  common_gaps: 'Common Performance Gaps',
+  attendance_concerns: 'Attendance / Punctuality Concerns',
+  training_needs: 'Training / Development Needs',
+  overall_recommendation: 'Overall HR / Management Recommendation',
+};
+
+function renderHighlightsSummary(data) {
+  document.getElementById('hlSummaryMonth').textContent = monthLabel(SELECTED_MONTH);
+  const body = document.getElementById('hlSummaryBody');
+  const fields = Object.keys(HL_FIELD_LABELS);
+  const hasAny = data && fields.some(f => data[f]);
+  if (!hasAny) {
+    body.innerHTML = `<div class="summary-empty">Nothing saved for this month yet — fill in the fields below and click Save All.</div>`;
+    return;
+  }
+  body.innerHTML = fields.map(f => `
+    <div class="summary-field">
+      <div class="summary-label">${HL_FIELD_LABELS[f]}</div>
+      <div class="${data[f] ? 'summary-value' : 'summary-empty'}">${data[f] ? escapeHtml(data[f]) : 'Not filled in'}</div>
+    </div>
+  `).join('');
+}
+
 async function loadHighlights() {
   const { data, error } = await supabase
     .from('progress_highlights').select('*')
@@ -564,6 +593,7 @@ async function loadHighlights() {
   if (error) { toast(error.message, 'error'); return; }
   const fields = ['key_improvements', 'common_gaps', 'attendance_concerns', 'training_needs', 'overall_recommendation'];
   fields.forEach(f => { document.getElementById('hl_' + f).value = data ? (data[f] || '') : ''; });
+  renderHighlightsSummary(data);
 }
 document.getElementById('saveHighlightsBtn').addEventListener('click', async () => {
   const payload = {
@@ -577,11 +607,46 @@ document.getElementById('saveHighlightsBtn').addEventListener('click', async () 
   const { error } = await supabase.from('progress_highlights').upsert(payload, { onConflict: 'reporting_month' });
   if (error) { toast(error.message, 'error'); return; }
   toast('Highlights saved', 'success');
+  renderHighlightsSummary(payload);
 });
 
 // ---------------------------------------------------------------------------
 // SIGN-OFF (one row per month)
 // ---------------------------------------------------------------------------
+function renderSignoffSummary(data) {
+  document.getElementById('soSummaryMonth').textContent = monthLabel(SELECTED_MONTH);
+  const badge = document.getElementById('soStatusBadge');
+  const body = document.getElementById('soSummaryBody');
+
+  const roles = [
+    { who: data?.prepared_by, when: data?.prepared_date, role: 'Prepared By' },
+    { who: data?.department_head, when: data?.department_head_date, role: 'Department Head' },
+    { who: data?.hr_representative, when: data?.hr_representative_date, role: 'HR Representative' },
+    { who: data?.management_approval, when: data?.management_date, role: 'Management Approval' },
+  ];
+  const completedCount = roles.filter(r => r.who).length;
+
+  if (completedCount === 0) {
+    badge.textContent = 'Not started';
+    badge.className = 'badge badge-grey';
+  } else if (completedCount === roles.length) {
+    badge.textContent = 'Complete';
+    badge.className = 'badge badge-green';
+  } else {
+    badge.textContent = `${completedCount} of ${roles.length} signed`;
+    badge.className = 'badge badge-yellow';
+  }
+
+  body.innerHTML = `<div class="signoff-grid">` + roles.map(r => `
+    <div class="signoff-block ${r.who ? 'done' : ''}">
+      <div class="role">${r.role}</div>
+      ${r.who
+        ? `<div class="who">✓ ${escapeHtml(r.who)}</div><div class="when">${r.when || 'No date given'}</div>`
+        : `<div class="pending">Awaiting sign-off</div>`}
+    </div>
+  `).join('') + `</div>`;
+}
+
 async function loadSignoff() {
   const { data, error } = await supabase
     .from('sign_off').select('*')
@@ -590,6 +655,7 @@ async function loadSignoff() {
   const fields = ['prepared_by', 'prepared_date', 'department_head', 'department_head_date',
     'hr_representative', 'hr_representative_date', 'management_approval', 'management_date'];
   fields.forEach(f => { document.getElementById('so_' + f).value = data ? (data[f] || '') : ''; });
+  renderSignoffSummary(data);
 }
 document.getElementById('saveSignoffBtn').addEventListener('click', async () => {
   const payload = {
@@ -602,6 +668,7 @@ document.getElementById('saveSignoffBtn').addEventListener('click', async () => 
   const { error } = await supabase.from('sign_off').upsert(payload, { onConflict: 'reporting_month' });
   if (error) { toast(error.message, 'error'); return; }
   toast('Sign-off saved', 'success');
+  renderSignoffSummary(payload);
 });
 
 // ---------------------------------------------------------------------------
@@ -610,6 +677,16 @@ document.getElementById('saveSignoffBtn').addEventListener('click', async () => 
 let statusChartInstance, categoryChartInstance, trendChartInstance;
 
 async function loadDashboard() {
+  // Workforce totals — from the master Employees list, not scoped to a month.
+  const totalProbationary = EMPLOYEES.filter(e => e.employment_type === 'Probationary').length;
+  const totalRegular = EMPLOYEES.filter(e => e.employment_type === 'Regular').length;
+  document.getElementById('workforceKpiGrid').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Total Employees</div><div class="kpi-value">${EMPLOYEES.length}</div></div>
+    <div class="kpi-card yellow"><div class="kpi-label">Probationary</div><div class="kpi-value">${totalProbationary}</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Regular</div><div class="kpi-value">${totalRegular}</div></div>
+  `;
+  document.getElementById('dashMonthLabel').textContent = monthLabel(SELECTED_MONTH);
+
   const { data: evals, error } = await supabase
     .from('evaluations').select('*')
     .eq('reporting_month', SELECTED_MONTH);

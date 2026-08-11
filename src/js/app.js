@@ -205,7 +205,7 @@ function renderEmployeesTable() {
   );
   const tbody = document.getElementById('employeesTbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">No employees yet. Click "Add Employee" to get started.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No employees yet. Click "Add Employee" to get started.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows.map(e => `
@@ -214,6 +214,7 @@ function renderEmployeesTable() {
       <td>${escapeHtml(e.position || '—')}</td>
       <td>${escapeHtml(e.department || '—')}</td>
       <td>${e.date_hired || '—'}</td>
+      <td>${lengthOfService(e.date_hired)}</td>
       <td><span class="badge ${e.employment_type === 'Regular' ? 'badge-green' : 'badge-yellow'}">${e.employment_type}</span></td>
       <td>
         <button class="btn-icon-text" onclick="editEmployee('${e.id}')">Edit</button>
@@ -583,7 +584,7 @@ async function loadThirdFifth() {
 
   const tbody = document.getElementById('tfTbody');
   if (!filtered.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="11">No regularization records yet.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="12">No regularization records yet.</td></tr>`;
     return;
   }
   tbody.innerHTML = filtered.map(r => `
@@ -592,6 +593,7 @@ async function loadThirdFifth() {
       <td>${escapeHtml(r.live_department || '—')}</td>
       <td>${escapeHtml(r.live_position || '—')}</td>
       <td>${r.live_date_hired || '—'}</td>
+      <td>${lengthOfService(r.live_date_hired)}</td>
       <td>${r.third_month_date || '—'}</td>
       <td>${r.third_month_result ? resultBadge(r.third_month_result) : '—'}</td>
       <td>${r.fifth_month_date || '—'}</td>
@@ -1103,5 +1105,33 @@ document.getElementById('restoreAllBtn').addEventListener('click', async () => {
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Computes "length of service" from a date_hired string, live off today's
+// date — nothing is stored, so this always reflects the current day with
+// no schema changes needed. Shows in days for very new hires, then
+// "X yr(s), Y mo(s)" once they've been on for a month or more.
+function lengthOfService(dateHiredStr) {
+  if (!dateHiredStr) return '—';
+  const hired = new Date(dateHiredStr + 'T00:00:00');
+  if (isNaN(hired.getTime())) return '—';
+  const now = new Date();
+  if (hired > now) return '—';
+
+  let months = (now.getFullYear() - hired.getFullYear()) * 12 + (now.getMonth() - hired.getMonth());
+  if (now.getDate() < hired.getDate()) months--;
+  if (months < 0) months = 0;
+
+  if (months < 1) {
+    const days = Math.max(0, Math.floor((now - hired) / 86400000));
+    if (days === 0) return 'Hired today';
+    return `${days} day${days === 1 ? '' : 's'}`;
+  }
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+  const parts = [];
+  if (years > 0) parts.push(`${years} yr${years === 1 ? '' : 's'}`);
+  if (remMonths > 0 || years === 0) parts.push(`${remMonths} mo${remMonths === 1 ? '' : 's'}`);
+  return parts.join(', ');
 }
 function bindStaticButtons() { /* placeholder for future static bindings */ }

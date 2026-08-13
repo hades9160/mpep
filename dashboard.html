@@ -29,10 +29,8 @@
       <button class="nav-item" data-view="regular">🟢 <span>Regular</span></button>
       <button class="nav-item" data-view="hrAttention">⚠️ <span>HR Attention</span></button>
       <button class="nav-item" data-view="thirdFifth">📆 <span>3rd &amp; 5th Month</span></button>
-      <button class="nav-item" data-view="highlights">📝 <span>Progress Highlights</span></button>
       <button class="nav-item" data-view="signoff">✅ <span>Sign-Off</span></button>
       <button class="nav-item" data-view="bulkImport">📥 <span>Bulk Import</span></button>
-      <button class="nav-item" data-view="backup">💾 <span>Backup &amp; Restore</span></button>
     </nav>
 
     <div class="sidebar-footer">
@@ -63,43 +61,33 @@
       <section class="view active" id="view-dashboard">
         <h3 style="margin-bottom:10px;">Total Workforce — All Time</h3>
         <div class="kpi-grid" id="workforceKpiGrid"></div>
-        <h3 style="margin:22px 0 10px;">Selected Month — <span id="dashMonthLabel"></span></h3>
-        <div class="kpi-grid" id="kpiGrid"></div>
 
-        <div class="panel" style="margin-bottom:16px;">
-          <h3>Monthly Summary — by Category</h3>
-          <div class="table-wrap" style="box-shadow:none;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Category</th><th>Total</th><th>On Track</th><th>Needs Improvement</th>
-                  <th>Failed</th><th>PIP / Action Plan</th><th>For Review</th><th>Completed</th>
-                </tr>
-              </thead>
-              <tbody id="categorySummaryTbody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="panel-grid">
+        <div class="panel-grid" style="margin-top:22px;">
           <div class="panel">
-            <h3>Status Breakdown — Selected Month</h3>
+            <h3>Status Breakdown — <span id="dashMonthLabel"></span></h3>
             <div class="chart-wrap"><canvas id="statusChart"></canvas></div>
           </div>
           <div class="panel">
-            <h3>Probationary vs Regular</h3>
+            <h3>Probationary vs Regular — Evaluated This Month</h3>
             <div class="chart-wrap"><canvas id="categoryChart"></canvas></div>
           </div>
         </div>
-        <div class="panel">
+        <div class="panel" style="margin-top:16px;">
           <h3>Monthly Evaluation Trend</h3>
           <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+        </div>
+        <div class="panel" style="margin-top:16px;">
+          <h3>Regular Employees — Monthly Headcount Trend</h3>
+          <p style="font-size:12.5px;color:var(--slate-600);margin:-4px 0 10px;">
+            Based on current Regular employees' Date Hired — shows workforce growth over time, not a historical record of when each person was regularized.
+          </p>
+          <div class="chart-wrap"><canvas id="regularTrendChart"></canvas></div>
         </div>
       </section>
 
       <!-- ===================== EMPLOYEES ===================== -->
       <section class="view" id="view-employees">
-        <p class="section-lead">Master employee list — add employees here first, then log their monthly evaluations.</p>
+        <p class="section-lead">Master employee list. Every employee shown here is automatically reflected in the Probationary or Regular tab based on their Employment Type.</p>
         <div class="table-toolbar">
           <div class="left">
             <input class="search-input" id="empSearch" placeholder="Search employee…">
@@ -116,7 +104,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Name</th><th>Position</th><th>Department</th><th>Date Hired</th><th>Length of Service</th><th>Type</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Position</th><th>Department</th><th>Date Hired</th><th>Type</th><th></th></tr></thead>
             <tbody id="employeesTbody"></tbody>
           </table>
         </div>
@@ -124,22 +112,24 @@
 
       <!-- ===================== PROBATIONARY ===================== -->
       <section class="view" id="view-probationary">
-        <p class="section-lead">Probationary employee performance evaluation monitoring for the selected reporting month.</p>
+        <p class="section-lead">Every Probationary employee from your Employees list, with their evaluation result for the selected reporting month (if logged). Click a row or "Manage Evaluations" to view/add any month's evaluation for that employee.</p>
         <div class="table-toolbar">
           <div class="left">
             <input class="search-input" id="probSearch" placeholder="Search employee…">
-            <select class="filter-select" id="probDeptFilter"><option value="">All departments</option></select>
             <select class="filter-select" id="probResultFilter">
               <option value="">All results</option>
               <option value="Passed">Passed</option>
               <option value="Failed">Failed</option>
+              <option value="__none">Not evaluated this month</option>
+            </select>
+            <select class="filter-select" id="probDeptFilter">
+              <option value="">All departments</option>
             </select>
           </div>
-          <button class="btn btn-amber" id="addProbBtn">+ Add Evaluation</button>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Stage</th><th>Result</th><th>KPI</th><th>Lates</th><th>Absences</th><th>Undertime</th><th></th></tr></thead>
+            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Stage</th><th>This Month's Result</th><th>KPI</th><th></th></tr></thead>
             <tbody id="probTbody"></tbody>
           </table>
         </div>
@@ -147,11 +137,10 @@
 
       <!-- ===================== REGULAR ===================== -->
       <section class="view" id="view-regular">
-        <p class="section-lead">Regular employee performance evaluation monitoring for the selected reporting month.</p>
+        <p class="section-lead">Every Regular employee from your Employees list, with their evaluation result for the selected reporting month (if logged). Click a row or "Manage Evaluations" to view/add any month's evaluation for that employee.</p>
         <div class="table-toolbar">
           <div class="left">
             <input class="search-input" id="regSearch" placeholder="Search employee…">
-            <select class="filter-select" id="regDeptFilter"><option value="">All departments</option></select>
             <select class="filter-select" id="regResultFilter">
               <option value="">All results</option>
               <option value="Satisfactory">Satisfactory</option>
@@ -160,13 +149,16 @@
               <option value="PIP">PIP</option>
               <option value="For Review">For Review</option>
               <option value="Completed">Completed</option>
+              <option value="__none">Not evaluated this month</option>
+            </select>
+            <select class="filter-select" id="regDeptFilter">
+              <option value="">All departments</option>
             </select>
           </div>
-          <button class="btn btn-amber" id="addRegBtn">+ Add Evaluation</button>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Period</th><th>Result</th><th>KPI</th><th>Lates</th><th>Absences</th><th>Undertime</th><th>Action</th><th></th></tr></thead>
+            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Period</th><th>This Month's Result</th><th>KPI</th><th></th></tr></thead>
             <tbody id="regTbody"></tbody>
           </table>
         </div>
@@ -176,10 +168,7 @@
       <section class="view" id="view-hrAttention">
         <p class="section-lead">Employees requiring HR / management attention this month.</p>
         <div class="table-toolbar">
-          <div class="left">
-            <input class="search-input" id="hrSearch" placeholder="Search employee…">
-            <select class="filter-select" id="hrStatusFilter"><option value="">All statuses</option></select>
-          </div>
+          <div class="left"></div>
           <button class="btn btn-amber" id="addHrBtn">+ Add Record</button>
         </div>
         <div class="table-wrap">
@@ -192,59 +181,23 @@
 
       <!-- ===================== 3RD & 5TH MONTH ===================== -->
       <section class="view" id="view-thirdFifth">
-        <p class="section-lead">3rd month and 5th month evaluation tracker (independent of reporting month filter).</p>
+        <p class="section-lead">Automatically lists every Probationary employee with their months-employed and 3rd/5th month review status — no manual add needed. Click "Edit" to record a review result once it's due.</p>
         <div class="table-toolbar">
           <div class="left">
             <input class="search-input" id="tfSearch" placeholder="Search employee…">
-            <select class="filter-select" id="tfStageFilter">
-              <option value="">All</option>
-              <option value="pending3rd">Pending 3rd Month</option>
-              <option value="pending5th">Pending 5th Month</option>
-              <option value="done">Fully Reviewed</option>
+            <select class="filter-select" id="tfDueFilter">
+              <option value="">All probationary employees</option>
+              <option value="due3">3rd month due/overdue</option>
+              <option value="due5">5th month due/overdue</option>
             </select>
           </div>
-          <button class="btn btn-amber" id="addTfBtn">+ Add Employee</button>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Employee</th><th>Department</th><th>Position</th><th>Date Hired</th><th>Length of Service</th><th>3rd Mo. Date</th><th>3rd Mo. Result</th><th>5th Mo. Date</th><th>5th Mo. Result</th><th>Final Rec.</th><th>Remarks</th><th></th></tr></thead>
+            <thead><tr><th>Employee</th><th>Department</th><th>Date Hired</th><th>Months Employed</th><th>3rd Month</th><th>5th Month</th><th>Final Rec.</th><th></th></tr></thead>
             <tbody id="tfTbody"></tbody>
           </table>
         </div>
-      </section>
-
-      <!-- ===================== PROGRESS HIGHLIGHTS ===================== -->
-      <section class="view" id="view-highlights">
-        <p class="section-lead">Narrative highlights for the selected reporting month. Autosaves per field on blur, or click Save All.</p>
-
-        <div class="panel" id="hlSummaryCard" style="margin-bottom:20px;border-left:4px solid var(--amber-500);">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <h3 style="margin:0;">📝 Saved Summary — <span id="hlSummaryMonth">—</span></h3>
-          </div>
-          <div id="hlSummaryBody"></div>
-        </div>
-
-        <div class="text-block">
-          <h3>Key Improvements / Positive Progress</h3>
-          <textarea id="hl_key_improvements" rows="3"></textarea>
-        </div>
-        <div class="text-block">
-          <h3>Common Performance Gaps</h3>
-          <textarea id="hl_common_gaps" rows="3"></textarea>
-        </div>
-        <div class="text-block">
-          <h3>Attendance / Punctuality Concerns</h3>
-          <textarea id="hl_attendance_concerns" rows="3"></textarea>
-        </div>
-        <div class="text-block">
-          <h3>Training / Development Needs</h3>
-          <textarea id="hl_training_needs" rows="3"></textarea>
-        </div>
-        <div class="text-block">
-          <h3>Overall HR / Management Recommendation</h3>
-          <textarea id="hl_overall_recommendation" rows="3"></textarea>
-        </div>
-        <button class="btn btn-amber" id="saveHighlightsBtn">Save All</button>
       </section>
 
       <!-- ===================== SIGN-OFF ===================== -->
@@ -278,7 +231,7 @@
       <section class="view" id="view-bulkImport">
         <p class="section-lead">
           Upload a filled-in copy of the bulk upload template to add many Employees, Evaluations,
-          HR Attention records, or 3rd &amp; 5th Month records at once — all in one file.
+          HR Attention records, or 3rd &amp; 5th Month results at once — all in one file.
         </p>
 
         <div class="text-block">
@@ -303,43 +256,11 @@
         <div id="bulkImportResults"></div>
       </section>
 
-      <!-- ===================== BACKUP & RESTORE ===================== -->
-      <section class="view" id="view-backup">
-        <p class="section-lead">
-          Export a full backup of every record in the system (Employees, Evaluations, HR Attention,
-          3rd &amp; 5th Month, Progress Highlights, Sign-Off) to a single file — or restore from one.
-        </p>
-
-        <div class="text-block">
-          <h3>Export all data</h3>
-          <p style="font-size:13px;color:var(--slate-600);margin:6px 0 12px;">
-            Downloads a complete snapshot of every table as one JSON file. Keep it somewhere safe as a backup.
-          </p>
-          <button class="btn btn-amber" id="exportAllBtn">⬇ Export All Data</button>
-          <span id="exportAllStatus" style="margin-left:10px;font-size:13px;color:var(--slate-600);"></span>
-        </div>
-
-        <div class="text-block">
-          <h3>Restore / import all data</h3>
-          <p style="font-size:13px;color:var(--slate-600);margin:6px 0 12px;">
-            Upload a previously exported backup file to restore it. Records with a matching ID are
-            updated in place; new records are added. This does not delete anything that isn't in the file.
-          </p>
-          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-            <input type="file" id="restoreAllFile" accept=".json">
-            <button class="btn btn-outline" id="restoreAllBtn">⬆ Restore From File</button>
-          </div>
-          <div id="restoreAllStatus" style="margin-top:12px;font-size:13px;color:var(--slate-600);"></div>
-        </div>
-
-        <div id="restoreAllResults"></div>
-      </section>
-
     </div>
   </div>
 </div>
 
-<!-- ============ GENERIC MODAL ============ -->
+<!-- ============ GENERIC MODAL (Add/Edit forms) ============ -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <div class="modal-header">
@@ -351,6 +272,17 @@
       <button class="btn btn-outline" id="modalCancel">Cancel</button>
       <button class="btn btn-amber" id="modalSave">Save</button>
     </div>
+  </div>
+</div>
+
+<!-- ============ EVALUATION HISTORY MODAL (per-employee, all months) ============ -->
+<div class="modal-overlay" id="historyModalOverlay">
+  <div class="modal" style="max-width:760px;">
+    <div class="modal-header">
+      <h3 id="historyModalTitle">Evaluation History</h3>
+      <button class="modal-close" id="historyModalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="historyModalBody"></div>
   </div>
 </div>
 

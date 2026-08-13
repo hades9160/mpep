@@ -98,6 +98,44 @@ the Employees sheet in the same file *and* employees already in the
 database. Import the Employees sheet first (or in the same upload) before
 Evaluations that reference brand-new employees.
 
+## v2 changes (Employee-driven Probationary/Regular/3rd&5th, trimmed Dashboard)
+
+If you're upgrading an existing deployment, do these two things:
+
+**1. Run the migration SQL.** In Supabase → SQL Editor, run `supabase/migration_v2.sql`.
+It adds a uniqueness constraint needed for the new auto-driven 3rd & 5th Month tracker.
+It's safe to run even on a brand-new database.
+
+**2. Replace your project files** with this delivery (overwrite everything except
+`.env`, which already has your real keys and doesn't need to change).
+
+### What changed
+- **Probationary / Regular tabs** now list every matching employee from your Employees
+  master list automatically — you no longer manually "add an evaluation row." Click
+  **Manage Evaluations** on any employee to open their full evaluation history and add/edit
+  any month's evaluation for them (useful for employees hired mid-year, e.g. hired in
+  December — you can still log any month's evaluation, not just the currently selected one).
+- **3rd & 5th Month tracker** now auto-lists every Probationary employee with their
+  computed months-employed and due/overdue status — no manual "add employee" step.
+  Click **Edit** to record a result once it's due.
+- **Progress Highlights page removed** entirely (nav item + section gone). The
+  `progress_highlights` table still exists in your database (harmless, unused) unless you
+  drop it via the commented-out line in `migration_v2.sql`.
+- **Dashboard** no longer shows the "Total Evaluated / On Track / Needs Improvement / Failed
+  / PIP / Completed" KPI cards or the "Monthly Summary — by Category" table. It now shows:
+  Total Workforce cards, Status Breakdown chart, Probationary vs Regular chart, Monthly
+  Evaluation Trend chart, and a new **Regular Employees — Monthly Headcount Trend** chart.
+- **Tables**: the first column now stays visible while scrolling horizontally (sticky),
+  long text truncates with a hover tooltip instead of forcing a wide scroll, and clicking
+  any row highlights it (amber) so you can visually confirm which record you're about to
+  edit before clicking Edit/Delete.
+
+### Files to delete / ignore
+- Nothing needs to be deleted from your Supabase database — the migration only adds a
+  constraint.
+- If your local project folder has a stray `jay lang.zip` file at the root (not part of
+  this app), it's safe to delete — it isn't referenced anywhere in the code.
+
 ## Database setup
 
 Same as before — this hasn't changed. If you haven't already, run

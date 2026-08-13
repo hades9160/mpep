@@ -7,10 +7,13 @@ Chart.register(...registerables);
 import { runBulkImport } from './bulkImport.js';
 
 let CURRENT_USER = null;
-let SELECTED_MONTH = null;     // 'YYYY-MM-01'
-let EMPLOYEES = [];             // cache of all employees
-let editingId = null;           // id currently being edited in the modal
-let editingTable = null;        // supabase table currently being edited
+let SELECTED_MONTH = null;      // 'YYYY-MM-01'
+let EMPLOYEES = [];              // cache of all employees
+let editingId = null;            // id currently being edited in the generic modal
+let editingTable = null;         // supabase table currently being edited
+let LAST_PROB_ROWS = [];         // last-fetched probationary roster+eval rows, for client-side filtering
+let LAST_REG_ROWS = [];          // same for regular
+let LAST_TF_ROWS = [];           // same for 3rd/5th month roster
 
 // ---------------------------------------------------------------------------
 // AUTH GUARD
@@ -34,7 +37,8 @@ let editingTable = null;        // supabase table currently being edited
   setupMenuToggle();
   populateMonthSelector();
   bindModalChrome();
-  bindStaticButtons();
+  bindHistoryModalChrome();
+  setupRowSelection();
 
   await loadEmployees();
   await refreshCurrentView();
@@ -50,10 +54,8 @@ const VIEW_TITLES = {
   regular:      ['Regular Employees', 'Performance evaluation monitoring'],
   hrAttention:  ['HR Attention', 'Employees requiring HR / management attention'],
   thirdFifth:   ['3rd & 5th Month Tracker', 'Probationary regularization tracker'],
-  highlights:   ['Progress Highlights', 'Monthly narrative summary'],
   signoff:      ['Sign-Off', 'Report preparation and review'],
   bulkImport:   ['Bulk Import', 'Add many records at once from a spreadsheet'],
-  backup:       ['Backup & Restore', 'Export or restore a full data snapshot'],
 };
 
 function setupNav() {
@@ -87,14 +89,29 @@ async function refreshCurrentView() { await loadView(currentView()); }
 async function loadView(view) {
   if (view === 'dashboard') return loadDashboard();
   if (view === 'employees') return loadEmployeesView();
-  if (view === 'probationary') return loadEvaluations('Probationary');
-  if (view === 'regular') return loadEvaluations('Regular');
+  if (view === 'probationary') return loadEvaluationsView('Probationary');
+  if (view === 'regular') return loadEvaluationsView('Regular');
   if (view === 'hrAttention') return loadHrAttention();
   if (view === 'thirdFifth') return loadThirdFifth();
-  if (view === 'highlights') return loadHighlights();
   if (view === 'signoff') return loadSignoff();
   if (view === 'bulkImport') return; // static view, no data load needed
-  if (view === 'backup') return; // static view, no data load needed
+}
+
+// ---------------------------------------------------------------------------
+// ROW SELECTION (click-to-highlight, not text selection)
+// A single delegated listener handles every current and future table body —
+// clicking a row (not a button/link inside it) toggles a highlight so HR can
+// visually track which record they're about to edit before clicking Edit.
+// ---------------------------------------------------------------------------
+function setupRowSelection() {
+  document.addEventListener('click', (e) => {
+    const row = e.target.closest('tbody tr');
+    if (!row || row.classList.contains('empty-row')) return;
+    if (e.target.closest('button, a, input, select, textarea')) return; // let controls work normally
+    const alreadySelected = row.classList.contains('row-selected');
+    row.parentElement.querySelectorAll('tr.row-selected').forEach(r => r.classList.remove('row-selected'));
+    if (!alreadySelected) row.classList.add('row-selected');
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +138,10 @@ function populateMonthSelector() {
   });
 }
 
+function monthLabel(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
 // ---------------------------------------------------------------------------
 // TOAST
 // ---------------------------------------------------------------------------
@@ -133,7 +154,7 @@ function toast(msg, type = '') {
 }
 
 // ---------------------------------------------------------------------------
-// MODAL (generic)
+// MODAL (generic — Add/Edit forms)
 // ---------------------------------------------------------------------------
 function bindModalChrome() {
   document.getElementById('modalClose').addEventListener('click', closeModal);
@@ -166,22 +187,6 @@ async function loadEmployees() {
   const { data, error } = await supabase.from('employees').select('*').order('name');
   if (error) { toast(error.message, 'error'); return; }
   EMPLOYEES = data || [];
-  populateDeptFilters();
-}
-
-// Keeps the department <select> filters on Employees / Probationary / Regular
-// in sync with whatever departments actually exist right now, without
-// clobbering the user's current selection if it's still valid.
-function populateDeptFilters() {
-  const depts = [...new Set(EMPLOYEES.map(e => (e.department || '').trim()).filter(Boolean))].sort();
-  ['empDeptFilter', 'probDeptFilter', 'regDeptFilter'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const current = sel.value;
-    sel.innerHTML = `<option value="">All departments</option>` +
-      depts.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
-    if (depts.includes(current)) sel.value = current;
-  });
 }
 
 function employeeOptions(type) {
@@ -192,8 +197,21 @@ function employeeOptions(type) {
 }
 
 async function loadEmployeesView() {
+  populateDeptFilter('empDeptFilter', EMPLOYEES.map(e => e.department));
   renderEmployeesTable();
 }
+
+// Fills a "All departments" <select> with the distinct, non-empty department
+// values found in the given list, preserving whatever the user had selected.
+function populateDeptFilter(selectId, deptValues) {
+  const sel = document.getElementById(selectId);
+  const current = sel.value;
+  const depts = [...new Set(deptValues.filter(Boolean))].sort();
+  sel.innerHTML = `<option value="">All departments</option>` +
+    depts.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+  if (depts.includes(current)) sel.value = current;
+}
+
 function renderEmployeesTable() {
   const search = (document.getElementById('empSearch').value || '').toLowerCase();
   const typeFilter = document.getElementById('empTypeFilter').value;
@@ -205,16 +223,15 @@ function renderEmployeesTable() {
   );
   const tbody = document.getElementById('employeesTbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No employees yet. Click "Add Employee" to get started.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">No employees match your filters.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows.map(e => `
     <tr>
-      <td><strong>${escapeHtml(e.name)}</strong></td>
-      <td>${escapeHtml(e.position || '—')}</td>
+      <td><strong class="truncate" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</strong></td>
+      <td><span class="truncate" title="${escapeHtml(e.position || '')}">${escapeHtml(e.position || '—')}</span></td>
       <td>${escapeHtml(e.department || '—')}</td>
       <td>${e.date_hired || '—'}</td>
-      <td>${lengthOfService(e.date_hired)}</td>
       <td><span class="badge ${e.employment_type === 'Regular' ? 'badge-green' : 'badge-yellow'}">${e.employment_type}</span></td>
       <td>
         <button class="btn-icon-text" onclick="editEmployee('${e.id}')">Edit</button>
@@ -268,7 +285,14 @@ async function saveEmployee() {
   closeModal();
   await loadEmployeesFull();
 }
-async function loadEmployeesFull() { await loadEmployees(); renderEmployeesTable(); }
+async function loadEmployeesFull() {
+  await loadEmployees();
+  // Employees feed Probationary/Regular/3rd&5th rosters directly, so keep
+  // whichever of those is currently visible in sync too.
+  const v = currentView();
+  if (v === 'employees') renderEmployeesTable();
+  else await refreshCurrentView();
+}
 
 // Refresh callbacks are looked up by string key rather than passed as bare
 // function references — inline onclick="" attributes evaluate in global
@@ -278,8 +302,8 @@ async function loadEmployeesFull() { await loadEmployees(); renderEmployeesTable
 // itself) never runs.
 const REFRESH_BY_KEY = {
   employees: loadEmployeesFull,
-  probationary: () => loadEvaluations('Probationary'),
-  regular: () => loadEvaluations('Regular'),
+  probationary: () => loadEvaluationsView('Probationary'),
+  regular: () => loadEvaluationsView('Regular'),
   hrAttention: () => loadHrAttention(),
   thirdFifth: () => loadThirdFifth(),
 };
@@ -295,28 +319,16 @@ async function deleteRow(table, id, refreshKey) {
 window.deleteRow = deleteRow;
 
 // ---------------------------------------------------------------------------
-// EVALUATIONS (Probationary & Regular share one table, filtered by type)
+// EVALUATIONS — Probationary & Regular tabs are now EMPLOYEE-DRIVEN:
+// every employee of that type shows up automatically (from the Employees
+// master list), with their evaluation for the selected month overlaid if
+// one has been logged. Adding/editing evaluations for ANY month (not just
+// the currently selected one) happens through the per-employee History
+// modal, which also covers employees hired outside the current month
+// (e.g. hired in December — HR can still log any month's evaluation there).
 // ---------------------------------------------------------------------------
 const PROB_RESULTS = ['Passed', 'Failed'];
 const REG_RESULTS = ['Satisfactory', 'Needs Improvement', 'Failed', 'PIP', 'For Review', 'Completed'];
-
-async function loadEvaluations(type) {
-  // Filter on the employee's CURRENT employment_type (via the !inner join),
-  // not the type snapshotted on the evaluation row at creation time. That
-  // way, if someone is promoted from Probationary to Regular (or vice
-  // versa), their evaluations immediately show up on the correct page —
-  // they don't stay stuck on whichever page they were logged under.
-  const { data, error } = await supabase
-    .from('evaluations')
-    .select('*, employees!inner(name, position, department, employment_type)')
-    .eq('employees.employment_type', type)
-    .eq('reporting_month', SELECTED_MONTH)
-    .order('created_at', { ascending: false });
-  if (error) { toast(error.message, 'error'); return; }
-
-  if (type === 'Probationary') renderProbTable(data || []);
-  else renderRegTable(data || []);
-}
 
 function resultBadge(result) {
   const map = {
@@ -328,137 +340,239 @@ function resultBadge(result) {
   return `<span class="badge ${map[result] || 'badge-grey'}">${result}</span>`;
 }
 
+async function loadEvaluationsView(type) {
+  const roster = EMPLOYEES.filter(e => e.employment_type === type);
+  const ids = roster.map(e => e.id);
+
+  let monthEvalsByEmployee = {};
+  if (ids.length) {
+    const { data, error } = await supabase
+      .from('evaluations')
+      .select('*')
+      .eq('reporting_month', SELECTED_MONTH)
+      .in('employee_id', ids);
+    if (error) { toast(error.message, 'error'); return; }
+    (data || []).forEach(row => { monthEvalsByEmployee[row.employee_id] = row; });
+  }
+
+  const combined = roster.map(e => ({ employee: e, evaluation: monthEvalsByEmployee[e.id] || null }));
+
+  if (type === 'Probationary') {
+    LAST_PROB_ROWS = combined;
+    populateDeptFilter('probDeptFilter', roster.map(e => e.department));
+    renderProbTable(combined);
+  } else {
+    LAST_REG_ROWS = combined;
+    populateDeptFilter('regDeptFilter', roster.map(e => e.department));
+    renderRegTable(combined);
+  }
+}
+
+function filterCombinedRows(rows, searchId, resultId, deptId) {
+  const search = (document.getElementById(searchId).value || '').toLowerCase();
+  const resultFilter = document.getElementById(resultId).value;
+  const deptFilter = document.getElementById(deptId).value;
+  return rows.filter(({ employee, evaluation }) => {
+    if (search && !employee.name.toLowerCase().includes(search)) return false;
+    if (deptFilter && employee.department !== deptFilter) return false;
+    if (resultFilter === '__none' && evaluation) return false;
+    if (resultFilter && resultFilter !== '__none' && evaluation?.evaluation_result !== resultFilter) return false;
+    return true;
+  });
+}
+
 function renderProbTable(rows) {
-  const search = (document.getElementById('probSearch').value || '').toLowerCase();
-  const deptFilter = document.getElementById('probDeptFilter').value;
-  const resultFilter = document.getElementById('probResultFilter').value;
-  const filtered = rows.filter(r =>
-    (!search || (r.employees?.name || '').toLowerCase().includes(search)) &&
-    (!deptFilter || r.employees?.department === deptFilter) &&
-    (!resultFilter || r.evaluation_result === resultFilter)
-  );
+  const filtered = filterCombinedRows(rows, 'probSearch', 'probResultFilter', 'probDeptFilter');
   const tbody = document.getElementById('probTbody');
   if (!filtered.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="10">No probationary evaluations logged for this month yet.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No probationary employees match your filters. Add employees in the Employees tab first.</td></tr>`;
     return;
   }
-  tbody.innerHTML = filtered.map(r => `
+  tbody.innerHTML = filtered.map(({ employee: e, evaluation: r }) => `
     <tr>
-      <td><strong>${escapeHtml(r.employees?.name || '—')}</strong></td>
-      <td>${escapeHtml(r.employees?.position || '—')}</td>
-      <td>${escapeHtml(r.employees?.department || '—')}</td>
-      <td>${escapeHtml(r.stage || '—')}</td>
-      <td>${resultBadge(r.evaluation_result)}</td>
-      <td>${r.kpi_score != null ? r.kpi_score + '%' : '—'}</td>
-      <td>${r.lates ?? 0}</td>
-      <td>${r.absences ?? 0}</td>
-      <td>${r.undertime ?? 0}</td>
-      <td>
-        <button class="btn-icon-text" onclick='editEvaluation(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Edit</button>
-        <button class="btn-danger-text" onclick="deleteRow('evaluations','${r.id}', 'probationary')">Delete</button>
-      </td>
+      <td><strong class="truncate" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</strong></td>
+      <td><span class="truncate" title="${escapeHtml(e.position || '')}">${escapeHtml(e.position || '—')}</span></td>
+      <td>${escapeHtml(e.department || '—')}</td>
+      <td>${r ? escapeHtml(r.stage || '—') : '—'}</td>
+      <td>${r ? resultBadge(r.evaluation_result) : '<span class="badge badge-grey">Not evaluated</span>'}</td>
+      <td>${r && r.kpi_score != null ? r.kpi_score + '%' : '—'}</td>
+      <td><button class="btn-icon-text" onclick="openEvaluationHistory('${e.id}')">Manage Evaluations</button></td>
     </tr>
   `).join('');
 }
 
 function renderRegTable(rows) {
-  const search = (document.getElementById('regSearch').value || '').toLowerCase();
-  const deptFilter = document.getElementById('regDeptFilter').value;
-  const resultFilter = document.getElementById('regResultFilter').value;
-  const filtered = rows.filter(r =>
-    (!search || (r.employees?.name || '').toLowerCase().includes(search)) &&
-    (!deptFilter || r.employees?.department === deptFilter) &&
-    (!resultFilter || r.evaluation_result === resultFilter)
-  );
+  const filtered = filterCombinedRows(rows, 'regSearch', 'regResultFilter', 'regDeptFilter');
   const tbody = document.getElementById('regTbody');
   if (!filtered.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="11">No regular employee evaluations logged for this month yet.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No regular employees match your filters. Add employees in the Employees tab first.</td></tr>`;
     return;
   }
-  tbody.innerHTML = filtered.map(r => `
+  tbody.innerHTML = filtered.map(({ employee: e, evaluation: r }) => `
     <tr>
-      <td><strong>${escapeHtml(r.employees?.name || '—')}</strong></td>
-      <td>${escapeHtml(r.employees?.position || '—')}</td>
-      <td>${escapeHtml(r.employees?.department || '—')}</td>
-      <td>${escapeHtml(r.stage || '—')}</td>
-      <td>${resultBadge(r.evaluation_result)}</td>
-      <td>${r.kpi_score != null ? r.kpi_score + '%' : '—'}</td>
-      <td>${r.lates ?? 0}</td>
-      <td>${r.absences ?? 0}</td>
-      <td>${r.undertime ?? 0}</td>
-      <td>${escapeHtml(r.action_notes || '—')}</td>
-      <td>
-        <button class="btn-icon-text" onclick='editEvaluation(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Edit</button>
-        <button class="btn-danger-text" onclick="deleteRow('evaluations','${r.id}', 'regular')">Delete</button>
-      </td>
+      <td><strong class="truncate" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</strong></td>
+      <td><span class="truncate" title="${escapeHtml(e.position || '')}">${escapeHtml(e.position || '—')}</span></td>
+      <td>${escapeHtml(e.department || '—')}</td>
+      <td>${r ? escapeHtml(r.stage || '—') : '—'}</td>
+      <td>${r ? resultBadge(r.evaluation_result) : '<span class="badge badge-grey">Not evaluated</span>'}</td>
+      <td>${r && r.kpi_score != null ? r.kpi_score + '%' : '—'}</td>
+      <td><button class="btn-icon-text" onclick="openEvaluationHistory('${e.id}')">Manage Evaluations</button></td>
     </tr>
   `).join('');
 }
 
 document.addEventListener('input', (e) => {
-  if (e.target.id === 'probSearch') loadEvaluations('Probationary');
-  if (e.target.id === 'regSearch') loadEvaluations('Regular');
+  if (e.target.id === 'probSearch') renderProbTable(LAST_PROB_ROWS);
+  if (e.target.id === 'regSearch') renderRegTable(LAST_REG_ROWS);
 });
 document.addEventListener('change', (e) => {
-  if (e.target.id === 'probDeptFilter' || e.target.id === 'probResultFilter') loadEvaluations('Probationary');
-  if (e.target.id === 'regDeptFilter' || e.target.id === 'regResultFilter') loadEvaluations('Regular');
+  if (e.target.id === 'probResultFilter' || e.target.id === 'probDeptFilter') renderProbTable(LAST_PROB_ROWS);
+  if (e.target.id === 'regResultFilter' || e.target.id === 'regDeptFilter') renderRegTable(LAST_REG_ROWS);
 });
 
-function evaluationFormHtml(type, r = {}) {
-  const results = type === 'Probationary' ? PROB_RESULTS : REG_RESULTS;
-  return `
-    <div class="form-grid">
-      <div class="field-sm span-2"><label>Employee</label>
-        <select id="f_employee_id">${employeeOptions(type)}</select>
-      </div>
-      <div class="field-sm"><label>${type === 'Probationary' ? 'Month / Stage' : 'Evaluation Period'}</label>
-        <input id="f_stage" value="${escapeHtml(r.stage || '')}" placeholder="${type === 'Probationary' ? 'e.g. Month 2' : 'e.g. Q3 2026'}">
-      </div>
-      <div class="field-sm"><label>Evaluation Result</label>
-        <select id="f_result">${results.map(x => `<option ${r.evaluation_result === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
-      </div>
-      <div class="field-sm"><label>KPI / Score (%)</label><input type="number" step="0.01" id="f_kpi" value="${r.kpi_score ?? ''}"></div>
-      <div class="field-sm"><label>Lates</label><input type="number" id="f_lates" value="${r.lates ?? 0}"></div>
-      <div class="field-sm"><label>Absences</label><input type="number" id="f_absences" value="${r.absences ?? 0}"></div>
-      <div class="field-sm"><label>Undertime</label><input type="number" id="f_undertime" value="${r.undertime ?? 0}"></div>
-      ${type === 'Regular' ? `<div class="field-sm span-2"><label>Performance Status / Action</label><textarea id="f_action_notes">${escapeHtml(r.action_notes || '')}</textarea></div>` : ''}
-    </div>`;
+// ---------------------------------------------------------------------------
+// EVALUATION HISTORY MODAL — every month's evaluation for one employee.
+// This is how HR handles employees hired mid-year: open their history and
+// add an evaluation for whichever month is due, independent of the
+// dashboard's global Reporting Month selector.
+// ---------------------------------------------------------------------------
+let historyEmployeeId = null;
+let historyEditingEvalId = null;
+
+function bindHistoryModalChrome() {
+  document.getElementById('historyModalClose').addEventListener('click', closeHistoryModal);
+  document.getElementById('historyModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'historyModalOverlay') closeHistoryModal();
+  });
+}
+function closeHistoryModal() {
+  document.getElementById('historyModalOverlay').classList.remove('active');
+  historyEmployeeId = null;
+  historyEditingEvalId = null;
 }
 
-document.getElementById('addProbBtn').addEventListener('click', () => {
-  if (!employeeOptions('Probationary')) { toast('Add a probationary employee first', 'error'); return; }
-  openModal('Add Probationary Evaluation', evaluationFormHtml('Probationary'), () => saveEvaluation('Probationary'));
-});
-document.getElementById('addRegBtn').addEventListener('click', () => {
-  if (!employeeOptions('Regular')) { toast('Add a regular employee first', 'error'); return; }
-  openModal('Add Regular Evaluation', evaluationFormHtml('Regular'), () => saveEvaluation('Regular'));
-});
-window.editEvaluation = function (r) {
-  editingId = r.id; editingTable = 'evaluations';
-  const type = r.employees?.employment_type || r.employment_type;
-  openModal('Edit Evaluation', evaluationFormHtml(type, r), () => saveEvaluation(type));
-  document.getElementById('f_employee_id').value = r.employee_id;
+window.openEvaluationHistory = async function (employeeId) {
+  historyEmployeeId = employeeId;
+  historyEditingEvalId = null;
+  document.getElementById('historyModalOverlay').classList.add('active');
+  await renderHistoryModal();
 };
-async function saveEvaluation(type) {
+
+async function renderHistoryModal() {
+  const employee = EMPLOYEES.find(e => e.id === historyEmployeeId);
+  if (!employee) { closeHistoryModal(); return; }
+
+  const { data, error } = await supabase
+    .from('evaluations')
+    .select('*')
+    .eq('employee_id', historyEmployeeId)
+    .order('reporting_month', { ascending: false });
+  if (error) { toast(error.message, 'error'); return; }
+  const evals = data || [];
+
+  document.getElementById('historyModalTitle').textContent = `Evaluation History — ${employee.name}`;
+
+  const rowsHtml = evals.length
+    ? evals.map(r => `
+        <tr class="${historyEditingEvalId === r.id ? 'editing-row' : ''}">
+          <td>${monthLabel(r.reporting_month)}</td>
+          <td>${escapeHtml(r.stage || '—')}</td>
+          <td>${resultBadge(r.evaluation_result)}</td>
+          <td>${r.kpi_score != null ? r.kpi_score + '%' : '—'}</td>
+          <td>
+            <button class="btn-icon-text" onclick="startEditHistoryEval('${r.id}')">Edit</button>
+            <button class="btn-danger-text" onclick="deleteHistoryEval('${r.id}')">Delete</button>
+          </td>
+        </tr>
+      `).join('')
+    : `<tr><td colspan="5" class="history-empty">No evaluations logged yet for this employee.</td></tr>`;
+
+  const editingEval = historyEditingEvalId ? evals.find(e => e.id === historyEditingEvalId) : null;
+
+  document.getElementById('historyModalBody').innerHTML = `
+    <div class="history-emp-header">
+      <div>
+        <div class="name">${escapeHtml(employee.name)}</div>
+        <div class="meta">${escapeHtml(employee.position || '—')} · ${escapeHtml(employee.department || '—')} · Hired ${employee.date_hired || '—'} · <span class="badge ${employee.employment_type === 'Regular' ? 'badge-green' : 'badge-yellow'}">${employee.employment_type}</span></div>
+      </div>
+    </div>
+
+    <table class="history-mini-table">
+      <thead><tr><th>Month</th><th>Stage</th><th>Result</th><th>KPI</th><th></th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+
+    <div class="history-add-form">
+      <h4>${editingEval ? 'Edit Evaluation' : 'Add Evaluation for a Month'}</h4>
+      <div class="form-grid">
+        <div class="field-sm"><label>Month</label><input type="month" id="hist_month" value="${editingEval ? editingEval.reporting_month.slice(0, 7) : SELECTED_MONTH.slice(0, 7)}"></div>
+        <div class="field-sm"><label>${employee.employment_type === 'Probationary' ? 'Stage' : 'Period'}</label>
+          <input id="hist_stage" value="${escapeHtml(editingEval?.stage || '')}" placeholder="${employee.employment_type === 'Probationary' ? 'e.g. Month 2' : 'e.g. Q3 2026'}">
+        </div>
+        <div class="field-sm"><label>Result</label>
+          <select id="hist_result">${(employee.employment_type === 'Probationary' ? PROB_RESULTS : REG_RESULTS).map(x => `<option ${editingEval?.evaluation_result === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+        </div>
+        <div class="field-sm"><label>KPI / Score (%)</label><input type="number" step="0.01" id="hist_kpi" value="${editingEval?.kpi_score ?? ''}"></div>
+        <div class="field-sm"><label>Lates</label><input type="number" id="hist_lates" value="${editingEval?.lates ?? 0}"></div>
+        <div class="field-sm"><label>Absences</label><input type="number" id="hist_absences" value="${editingEval?.absences ?? 0}"></div>
+        <div class="field-sm"><label>Undertime</label><input type="number" id="hist_undertime" value="${editingEval?.undertime ?? 0}"></div>
+        ${employee.employment_type === 'Regular' ? `<div class="field-sm span-2"><label>Performance Status / Action</label><textarea id="hist_action_notes">${escapeHtml(editingEval?.action_notes || '')}</textarea></div>` : ''}
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <button class="btn btn-amber" id="historySaveBtn">${editingEval ? 'Update Evaluation' : 'Add Evaluation'}</button>
+        ${editingEval ? `<button class="btn btn-outline" id="historyCancelEditBtn">Cancel Edit</button>` : ''}
+      </div>
+    </div>
+  `;
+
+  document.getElementById('historySaveBtn').addEventListener('click', () => saveHistoryEval(employee));
+  const cancelBtn = document.getElementById('historyCancelEditBtn');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => { historyEditingEvalId = null; renderHistoryModal(); });
+}
+
+window.startEditHistoryEval = function (evalId) {
+  historyEditingEvalId = evalId;
+  renderHistoryModal();
+};
+
+window.deleteHistoryEval = async function (evalId) {
+  if (!confirm('Delete this evaluation? This cannot be undone.')) return;
+  const { error } = await supabase.from('evaluations').delete().eq('id', evalId);
+  if (error) { toast(error.message, 'error'); return; }
+  toast('Deleted', 'success');
+  await renderHistoryModal();
+  await refreshCurrentView(); // keep Probationary/Regular table + Dashboard in sync
+};
+
+async function saveHistoryEval(employee) {
+  const monthInput = val('hist_month'); // 'YYYY-MM'
+  if (!monthInput) { toast('Pick a month', 'error'); return; }
+  const reportingMonth = monthInput + '-01';
+
   const payload = {
-    employee_id: val('f_employee_id'),
-    employment_type: type,
-    reporting_month: SELECTED_MONTH,
-    stage: strOrNull('f_stage'),
-    evaluation_result: val('f_result'),
-    kpi_score: numOrNull('f_kpi'),
-    lates: numOrNull('f_lates') || 0,
-    absences: numOrNull('f_absences') || 0,
-    undertime: numOrNull('f_undertime') || 0,
-    action_notes: type === 'Regular' ? strOrNull('f_action_notes') : null,
+    employee_id: employee.id,
+    employment_type: employee.employment_type,
+    reporting_month: reportingMonth,
+    stage: strOrNull('hist_stage'),
+    evaluation_result: val('hist_result'),
+    kpi_score: numOrNull('hist_kpi'),
+    lates: numOrNull('hist_lates') || 0,
+    absences: numOrNull('hist_absences') || 0,
+    undertime: numOrNull('hist_undertime') || 0,
+    action_notes: employee.employment_type === 'Regular' ? strOrNull('hist_action_notes') : null,
   };
+
   let error;
-  if (editingId) ({ error } = await supabase.from('evaluations').update(payload).eq('id', editingId));
-  else ({ error } = await supabase.from('evaluations').insert(payload));
+  if (historyEditingEvalId) {
+    ({ error } = await supabase.from('evaluations').update(payload).eq('id', historyEditingEvalId));
+  } else {
+    ({ error } = await supabase.from('evaluations').insert(payload));
+  }
   if (error) { toast(error.message, 'error'); return; }
   toast('Evaluation saved', 'success');
-  closeModal();
-  await loadEvaluations(type);
+  historyEditingEvalId = null;
+  await renderHistoryModal();
+  await refreshCurrentView(); // keep Probationary/Regular table + Dashboard in sync
 }
 
 // ---------------------------------------------------------------------------
@@ -471,37 +585,20 @@ async function loadHrAttention() {
     .eq('reporting_month', SELECTED_MONTH)
     .order('created_at', { ascending: false });
   if (error) { toast(error.message, 'error'); return; }
-
-  // Keep the status filter options in sync with whatever statuses actually
-  // appear in the data, without losing the user's current selection.
-  const statusSel = document.getElementById('hrStatusFilter');
-  const statuses = [...new Set((data || []).map(r => (r.employment_status || '').trim()).filter(Boolean))].sort();
-  const currentStatus = statusSel.value;
-  statusSel.innerHTML = `<option value="">All statuses</option>` +
-    statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-  if (statuses.includes(currentStatus)) statusSel.value = currentStatus;
-
-  const search = (document.getElementById('hrSearch').value || '').toLowerCase();
-  const statusFilter = statusSel.value;
-  const filtered = (data || []).filter(r =>
-    (!search || (r.employees?.name || '').toLowerCase().includes(search)) &&
-    (!statusFilter || r.employment_status === statusFilter)
-  );
-
   const tbody = document.getElementById('hrTbody');
-  if (!filtered.length) {
+  if (!data.length) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="8">No employees flagged for HR attention this month.</td></tr>`;
     return;
   }
-  tbody.innerHTML = filtered.map(r => `
+  tbody.innerHTML = data.map(r => `
     <tr>
-      <td><strong>${escapeHtml(r.employees?.name || '—')}</strong></td>
+      <td><strong class="truncate" title="${escapeHtml(r.employees?.name || '')}">${escapeHtml(r.employees?.name || '—')}</strong></td>
       <td>${escapeHtml(r.employment_status || '—')}</td>
-      <td>${escapeHtml(r.key_performance_issue || '—')}</td>
-      <td>${escapeHtml(r.coaching_support || '—')}</td>
-      <td>${escapeHtml(r.expected_target || '—')}</td>
+      <td><span class="truncate" title="${escapeHtml(r.key_performance_issue || '')}">${escapeHtml(r.key_performance_issue || '—')}</span></td>
+      <td><span class="truncate" title="${escapeHtml(r.coaching_support || '')}">${escapeHtml(r.coaching_support || '—')}</span></td>
+      <td><span class="truncate" title="${escapeHtml(r.expected_target || '')}">${escapeHtml(r.expected_target || '—')}</span></td>
       <td>${r.next_review_date || '—'}</td>
-      <td>${escapeHtml(r.recommendation || '—')}</td>
+      <td><span class="truncate" title="${escapeHtml(r.recommendation || '')}">${escapeHtml(r.recommendation || '—')}</span></td>
       <td>
         <button class="btn-icon-text" onclick='editHr(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Edit</button>
         <button class="btn-danger-text" onclick="deleteRow('hr_attention','${r.id}', 'hrAttention')">Delete</button>
@@ -529,12 +626,6 @@ window.editHr = function (r) {
   openModal('Edit HR Attention Record', hrFormHtml(r), saveHr);
   document.getElementById('f_employee_id').value = r.employee_id;
 };
-document.addEventListener('input', (e) => {
-  if (e.target.id === 'hrSearch') loadHrAttention();
-});
-document.addEventListener('change', (e) => {
-  if (e.target.id === 'hrStatusFilter') loadHrAttention();
-});
 async function saveHr() {
   const payload = {
     employee_id: val('f_employee_id'), reporting_month: SELECTED_MONTH,
@@ -552,192 +643,149 @@ async function saveHr() {
 }
 
 // ---------------------------------------------------------------------------
-// 3RD & 5TH MONTH TRACKER
+// 3RD & 5TH MONTH TRACKER — auto-driven from the Probationary employee
+// roster. No manual "add employee" step: every Probationary employee shows
+// up here automatically, with months-employed and due/overdue flags
+// computed from Date Hired. Recording a result upserts one row per employee
+// (keyed by employee_id) rather than requiring the row to be created first.
 // ---------------------------------------------------------------------------
-async function loadThirdFifth() {
-  // Join in the master Employees record so Department / Position / Date
-  // Hired can fall back to it whenever this table's own copy is blank —
-  // this is what fixes "date hired not reflecting": these fields used to
-  // be entered separately here and would show "—" if left empty, even
-  // though the Employees master list already had the date on file.
-  const { data, error } = await supabase
-    .from('third_fifth_month')
-    .select('*, employees(name, department, position, date_hired)')
-    .order('created_at', { ascending: false });
-  if (error) { toast(error.message, 'error'); return; }
+function monthsBetween(fromDateStr, toDate) {
+  if (!fromDateStr) return null;
+  const from = new Date(fromDateStr + 'T00:00:00');
+  let months = (toDate.getFullYear() - from.getFullYear()) * 12 + (toDate.getMonth() - from.getMonth());
+  if (toDate.getDate() < from.getDate()) months -= 1;
+  return Math.max(0, months);
+}
+function addMonths(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().slice(0, 10);
+}
+function dueBadge(monthsEmployed, targetMonth, hasResult) {
+  if (hasResult) return '';
+  if (monthsEmployed === null) return '';
+  if (monthsEmployed >= targetMonth) return `<span class="due-badge overdue">Overdue</span>`;
+  if (monthsEmployed === targetMonth - 1) return `<span class="due-badge due">Due next month</span>`;
+  return `<span class="due-badge notyet">Not yet due</span>`;
+}
 
-  (data || []).forEach(r => {
-    r.live_department = r.department || r.employees?.department || null;
-    r.live_position = r.position || r.employees?.position || null;
-    r.live_date_hired = r.date_hired || r.employees?.date_hired || null;
+async function loadThirdFifth() {
+  const roster = EMPLOYEES.filter(e => e.employment_type === 'Probationary');
+  const ids = roster.map(e => e.id);
+
+  let byEmployee = {};
+  if (ids.length) {
+    const { data, error } = await supabase
+      .from('third_fifth_month').select('*').in('employee_id', ids);
+    if (error) { toast(error.message, 'error'); return; }
+    (data || []).forEach(r => { byEmployee[r.employee_id] = r; });
+  }
+
+  const now = new Date();
+  const combined = roster.map(e => {
+    const monthsEmployed = monthsBetween(e.date_hired, now);
+    return { employee: e, record: byEmployee[e.id] || null, monthsEmployed };
   });
 
+  LAST_TF_ROWS = combined;
+  renderThirdFifthTable(combined);
+}
+
+function renderThirdFifthTable(rows) {
   const search = (document.getElementById('tfSearch').value || '').toLowerCase();
-  const stageFilter = document.getElementById('tfStageFilter').value;
-  const filtered = (data || []).filter(r => {
-    if (search && !(r.employees?.name || '').toLowerCase().includes(search)) return false;
-    if (stageFilter === 'pending3rd' && r.third_month_result) return false;
-    if (stageFilter === 'pending5th' && (!r.third_month_result || r.fifth_month_result)) return false;
-    if (stageFilter === 'done' && !(r.third_month_result && r.fifth_month_result)) return false;
+  const dueFilter = document.getElementById('tfDueFilter').value;
+
+  const filtered = rows.filter(({ employee, record, monthsEmployed }) => {
+    if (search && !employee.name.toLowerCase().includes(search)) return false;
+    if (dueFilter === 'due3' && !(monthsEmployed !== null && monthsEmployed >= 3 && !record?.third_month_result)) return false;
+    if (dueFilter === 'due5' && !(monthsEmployed !== null && monthsEmployed >= 5 && !record?.fifth_month_result)) return false;
     return true;
   });
 
   const tbody = document.getElementById('tfTbody');
   if (!filtered.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="12">No regularization records yet.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="8">No probationary employees match your filters.</td></tr>`;
     return;
   }
-  tbody.innerHTML = filtered.map(r => `
+
+  tbody.innerHTML = filtered.map(({ employee: e, record: r, monthsEmployed }) => {
+    const suggested3rd = e.date_hired ? addMonths(e.date_hired, 3) : null;
+    const suggested5th = e.date_hired ? addMonths(e.date_hired, 5) : null;
+    return `
     <tr>
-      <td><strong>${escapeHtml(r.employees?.name || '—')}</strong></td>
-      <td>${escapeHtml(r.live_department || '—')}</td>
-      <td>${escapeHtml(r.live_position || '—')}</td>
-      <td>${r.live_date_hired || '—'}</td>
-      <td>${lengthOfService(r.live_date_hired)}</td>
-      <td>${r.third_month_date || '—'}</td>
-      <td>${r.third_month_result ? resultBadge(r.third_month_result) : '—'}</td>
-      <td>${r.fifth_month_date || '—'}</td>
-      <td>${r.fifth_month_result ? `<span class="badge ${r.fifth_month_result === 'Qualified' ? 'badge-green' : r.fifth_month_result === 'Not Qualified' ? 'badge-red' : 'badge-blue'}">${r.fifth_month_result}</span>` : '—'}</td>
-      <td>${escapeHtml(r.final_recommendation || '—')}</td>
-      <td>${escapeHtml(r.remarks || '—')}</td>
+      <td><strong class="truncate" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</strong></td>
+      <td>${escapeHtml(e.department || '—')}</td>
+      <td>${e.date_hired || '—'}</td>
+      <td>${monthsEmployed !== null ? monthsEmployed + ' mo.' : '—'}</td>
       <td>
-        <button class="btn-icon-text" onclick='editTf(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Edit</button>
-        <button class="btn-danger-text" onclick="deleteRow('third_fifth_month','${r.id}', 'thirdFifth')">Delete</button>
+        ${r?.third_month_result
+          ? `${resultBadge(r.third_month_result)}${r.third_month_date ? ` <span style="color:var(--slate-400);font-size:11px;">(${r.third_month_date})</span>` : ''}`
+          : `${dueBadge(monthsEmployed, 3, false)} ${suggested3rd ? `<div style="font-size:11px;color:var(--slate-400);margin-top:2px;">target ${suggested3rd}</div>` : ''}`}
       </td>
+      <td>
+        ${r?.fifth_month_result
+          ? `<span class="badge ${r.fifth_month_result === 'Qualified' ? 'badge-green' : r.fifth_month_result === 'Not Qualified' ? 'badge-red' : 'badge-blue'}">${r.fifth_month_result}</span>${r.fifth_month_date ? ` <span style="color:var(--slate-400);font-size:11px;">(${r.fifth_month_date})</span>` : ''}`
+          : `${dueBadge(monthsEmployed, 5, false)} ${suggested5th ? `<div style="font-size:11px;color:var(--slate-400);margin-top:2px;">target ${suggested5th}</div>` : ''}`}
+      </td>
+      <td><span class="truncate" title="${escapeHtml(r?.final_recommendation || '')}">${escapeHtml(r?.final_recommendation || '—')}</span></td>
+      <td><button class="btn-icon-text" onclick="editThirdFifth('${e.id}')">Edit</button></td>
     </tr>
-  `).join('');
+  `; }).join('');
 }
+
 document.addEventListener('input', (e) => {
-  if (e.target.id === 'tfSearch') loadThirdFifth();
+  if (e.target.id === 'tfSearch') renderThirdFifthTable(LAST_TF_ROWS);
 });
 document.addEventListener('change', (e) => {
-  if (e.target.id === 'tfStageFilter') loadThirdFifth();
+  if (e.target.id === 'tfDueFilter') renderThirdFifthTable(LAST_TF_ROWS);
 });
-function tfFormHtml(r = {}) {
-  return `
+
+window.editThirdFifth = function (employeeId) {
+  const row = LAST_TF_ROWS.find(x => x.employee.id === employeeId);
+  if (!row) return;
+  const { employee: e, record: r } = row;
+  editingId = employeeId; // we upsert keyed by employee_id, not a third_fifth_month row id
+  const suggested3rd = e.date_hired ? addMonths(e.date_hired, 3) : '';
+  const suggested5th = e.date_hired ? addMonths(e.date_hired, 5) : '';
+  const body = `
     <div class="form-grid">
-      <div class="field-sm span-2"><label>Employee</label><select id="f_employee_id">${employeeOptions()}</select></div>
-      <div class="field-sm"><label>Department</label><input id="f_department" value="${escapeHtml(r.live_department ?? r.department ?? '')}"></div>
-      <div class="field-sm"><label>Position</label><input id="f_position" value="${escapeHtml(r.live_position ?? r.position ?? '')}"></div>
-      <div class="field-sm"><label>Date Hired</label><input type="date" id="f_date_hired" value="${r.live_date_hired ?? r.date_hired ?? ''}"></div>
-      <div class="field-sm"><label>3rd Month Date</label><input type="date" id="f_third_date" value="${r.third_month_date || ''}"></div>
+      <div class="field-sm span-2" style="color:var(--slate-600);font-size:13px;">
+        ${escapeHtml(e.name)} — ${escapeHtml(e.position || '—')} · Hired ${e.date_hired || '—'}
+      </div>
+      <div class="field-sm"><label>3rd Month Date</label><input type="date" id="f_third_date" value="${r?.third_month_date || suggested3rd}"></div>
       <div class="field-sm"><label>3rd Month Result</label>
         <select id="f_third_result">
           <option value="">—</option>
-          ${['Passed', 'Failed', 'PIP'].map(x => `<option ${r.third_month_result === x ? 'selected' : ''}>${x}</option>`).join('')}
+          ${['Passed', 'Failed', 'PIP'].map(x => `<option ${r?.third_month_result === x ? 'selected' : ''}>${x}</option>`).join('')}
         </select>
       </div>
-      <div class="field-sm"><label>5th Month Date</label><input type="date" id="f_fifth_date" value="${r.fifth_month_date || ''}"></div>
+      <div class="field-sm"><label>5th Month Date</label><input type="date" id="f_fifth_date" value="${r?.fifth_month_date || suggested5th}"></div>
       <div class="field-sm"><label>5th Month Result</label>
         <select id="f_fifth_result">
           <option value="">—</option>
-          ${['Qualified', 'Not Qualified', 'Review'].map(x => `<option ${r.fifth_month_result === x ? 'selected' : ''}>${x}</option>`).join('')}
+          ${['Qualified', 'Not Qualified', 'Review'].map(x => `<option ${r?.fifth_month_result === x ? 'selected' : ''}>${x}</option>`).join('')}
         </select>
       </div>
-      <div class="field-sm span-2"><label>Final Recommendation</label><input id="f_final_rec" value="${escapeHtml(r.final_recommendation || '')}"></div>
-      <div class="field-sm span-2"><label>Remarks</label><textarea id="f_remarks">${escapeHtml(r.remarks || '')}</textarea></div>
+      <div class="field-sm span-2"><label>Final Recommendation</label><input id="f_final_rec" value="${escapeHtml(r?.final_recommendation || '')}"></div>
+      <div class="field-sm span-2"><label>Remarks</label><textarea id="f_remarks">${escapeHtml(r?.remarks || '')}</textarea></div>
     </div>`;
-}
-// Fills Department / Position / Date Hired from the Employees master
-// record for whichever employee is selected — only overwrites a field if
-// it's currently empty, so it never clobbers something already typed in.
-function bindTfAutofill() {
-  const empSel = document.getElementById('f_employee_id');
-  if (!empSel) return;
-  empSel.addEventListener('change', () => {
-    const emp = EMPLOYEES.find(x => x.id === empSel.value);
-    if (!emp) return;
-    const deptEl = document.getElementById('f_department');
-    const posEl = document.getElementById('f_position');
-    const dateEl = document.getElementById('f_date_hired');
-    if (deptEl && !deptEl.value) deptEl.value = emp.department || '';
-    if (posEl && !posEl.value) posEl.value = emp.position || '';
-    if (dateEl && !dateEl.value) dateEl.value = emp.date_hired || '';
-  });
-}
-document.getElementById('addTfBtn').addEventListener('click', () => {
-  openModal('Add Regularization Record', tfFormHtml(), saveTf);
-  bindTfAutofill();
-  document.getElementById('f_employee_id').dispatchEvent(new Event('change'));
-});
-window.editTf = function (r) {
-  editingId = r.id; editingTable = 'third_fifth_month';
-  openModal('Edit Regularization Record', tfFormHtml(r), saveTf);
-  document.getElementById('f_employee_id').value = r.employee_id;
-  bindTfAutofill();
+  openModal('3rd & 5th Month Review', body, () => saveThirdFifth(e));
 };
-async function saveTf() {
+
+async function saveThirdFifth(employee) {
   const payload = {
-    employee_id: val('f_employee_id'), department: strOrNull('f_department'),
-    position: strOrNull('f_position'), date_hired: strOrNull('f_date_hired'),
+    employee_id: employee.id,
+    department: employee.department, position: employee.position, date_hired: employee.date_hired,
     third_month_date: strOrNull('f_third_date'), third_month_result: strOrNull('f_third_result'),
     fifth_month_date: strOrNull('f_fifth_date'), fifth_month_result: strOrNull('f_fifth_result'),
     final_recommendation: strOrNull('f_final_rec'), remarks: strOrNull('f_remarks'),
   };
-  let error;
-  if (editingId) ({ error } = await supabase.from('third_fifth_month').update(payload).eq('id', editingId));
-  else ({ error } = await supabase.from('third_fifth_month').insert(payload));
+  const { error } = await supabase.from('third_fifth_month').upsert(payload, { onConflict: 'employee_id' });
   if (error) { toast(error.message, 'error'); return; }
   toast('Saved', 'success');
   closeModal();
   await loadThirdFifth();
 }
-
-// ---------------------------------------------------------------------------
-// PROGRESS HIGHLIGHTS (one row per month)
-// ---------------------------------------------------------------------------
-function monthLabel(dateStr) {
-  return new Date(dateStr + 'T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
-}
-
-const HL_FIELD_LABELS = {
-  key_improvements: 'Key Improvements / Positive Progress',
-  common_gaps: 'Common Performance Gaps',
-  attendance_concerns: 'Attendance / Punctuality Concerns',
-  training_needs: 'Training / Development Needs',
-  overall_recommendation: 'Overall HR / Management Recommendation',
-};
-
-function renderHighlightsSummary(data) {
-  document.getElementById('hlSummaryMonth').textContent = monthLabel(SELECTED_MONTH);
-  const body = document.getElementById('hlSummaryBody');
-  const fields = Object.keys(HL_FIELD_LABELS);
-  const hasAny = data && fields.some(f => data[f]);
-  if (!hasAny) {
-    body.innerHTML = `<div class="summary-empty">Nothing saved for this month yet — fill in the fields below and click Save All.</div>`;
-    return;
-  }
-  body.innerHTML = fields.map(f => `
-    <div class="summary-field">
-      <div class="summary-label">${HL_FIELD_LABELS[f]}</div>
-      <div class="${data[f] ? 'summary-value' : 'summary-empty'}">${data[f] ? escapeHtml(data[f]) : 'Not filled in'}</div>
-    </div>
-  `).join('');
-}
-
-async function loadHighlights() {
-  const { data, error } = await supabase
-    .from('progress_highlights').select('*')
-    .eq('reporting_month', SELECTED_MONTH).maybeSingle();
-  if (error) { toast(error.message, 'error'); return; }
-  const fields = ['key_improvements', 'common_gaps', 'attendance_concerns', 'training_needs', 'overall_recommendation'];
-  fields.forEach(f => { document.getElementById('hl_' + f).value = data ? (data[f] || '') : ''; });
-  renderHighlightsSummary(data);
-}
-document.getElementById('saveHighlightsBtn').addEventListener('click', async () => {
-  const payload = {
-    reporting_month: SELECTED_MONTH,
-    key_improvements: strOrNull('hl_key_improvements'),
-    common_gaps: strOrNull('hl_common_gaps'),
-    attendance_concerns: strOrNull('hl_attendance_concerns'),
-    training_needs: strOrNull('hl_training_needs'),
-    overall_recommendation: strOrNull('hl_overall_recommendation'),
-  };
-  const { error } = await supabase.from('progress_highlights').upsert(payload, { onConflict: 'reporting_month' });
-  if (error) { toast(error.message, 'error'); return; }
-  toast('Highlights saved', 'success');
-  renderHighlightsSummary(payload);
-});
 
 // ---------------------------------------------------------------------------
 // SIGN-OFF (one row per month)
@@ -803,7 +851,7 @@ document.getElementById('saveSignoffBtn').addEventListener('click', async () => 
 // ---------------------------------------------------------------------------
 // DASHBOARD
 // ---------------------------------------------------------------------------
-let statusChartInstance, categoryChartInstance, trendChartInstance;
+let statusChartInstance, categoryChartInstance, trendChartInstance, regularTrendChartInstance;
 
 async function loadDashboard() {
   // Workforce totals — from the master Employees list, not scoped to a month.
@@ -817,12 +865,9 @@ async function loadDashboard() {
   document.getElementById('dashMonthLabel').textContent = monthLabel(SELECTED_MONTH);
 
   const { data: evals, error } = await supabase
-    .from('evaluations').select('*, employees(employment_type)')
+    .from('evaluations').select('*')
     .eq('reporting_month', SELECTED_MONTH);
   if (error) { toast(error.message, 'error'); return; }
-  // Use the employee's CURRENT employment_type when it's available (falls
-  // back to the stored snapshot only if the linked employee is gone).
-  evals.forEach(e => { e.live_employment_type = e.employees?.employment_type || e.employment_type; });
 
   const counts = { onTrack: 0, needsImprovement: 0, failed: 0, pip: 0, forReview: 0, completed: 0 };
   evals.forEach(e => {
@@ -833,43 +878,6 @@ async function loadDashboard() {
     else if (e.evaluation_result === 'For Review') counts.forReview++;
     else if (e.evaluation_result === 'Completed') counts.completed++;
   });
-
-  const kpiGrid = document.getElementById('kpiGrid');
-  kpiGrid.innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Total Evaluated</div><div class="kpi-value">${evals.length}</div></div>
-    <div class="kpi-card green"><div class="kpi-label">On Track</div><div class="kpi-value">${counts.onTrack}</div></div>
-    <div class="kpi-card yellow"><div class="kpi-label">Needs Improvement</div><div class="kpi-value">${counts.needsImprovement}</div></div>
-    <div class="kpi-card red"><div class="kpi-label">Failed</div><div class="kpi-value">${counts.failed}</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">PIP / Action Plan</div><div class="kpi-value">${counts.pip}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value">${counts.completed}</div></div>
-  `;
-
-  // Monthly Summary by Category table (mirrors the "CATEGORY | TOTAL | ON TRACK..." table
-  // from the original Excel Monthly Summary sheet)
-  function categoryRow(label, type) {
-    const rows = evals.filter(e => e.live_employment_type === type);
-    const c = {
-      total: rows.length,
-      onTrack: rows.filter(e => ['Passed', 'Satisfactory'].includes(e.evaluation_result)).length,
-      needsImprovement: rows.filter(e => e.evaluation_result === 'Needs Improvement').length,
-      failed: rows.filter(e => e.evaluation_result === 'Failed').length,
-      pip: rows.filter(e => e.evaluation_result === 'PIP').length,
-      forReview: rows.filter(e => e.evaluation_result === 'For Review').length,
-      completed: rows.filter(e => e.evaluation_result === 'Completed').length,
-    };
-    return `<tr>
-      <td><strong>${label}</strong></td>
-      <td>${c.total}</td><td>${c.onTrack}</td><td>${c.needsImprovement}</td>
-      <td>${c.failed}</td><td>${c.pip}</td><td>${c.forReview}</td><td>${c.completed}</td>
-    </tr>`;
-  }
-  document.getElementById('categorySummaryTbody').innerHTML =
-    categoryRow('Probationary Employees', 'Probationary') +
-    categoryRow('Regular Employees', 'Regular') +
-    `<tr style="background:var(--slate-50);font-weight:700;">
-      <td>Total</td><td>${evals.length}</td><td>${counts.onTrack}</td><td>${counts.needsImprovement}</td>
-      <td>${counts.failed}</td><td>${counts.pip}</td><td>${counts.forReview}</td><td>${counts.completed}</td>
-    </tr>`;
 
   // Status donut
   const statusCtx = document.getElementById('statusChart');
@@ -887,22 +895,22 @@ async function loadDashboard() {
     options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } }, cutout: '62%' }
   });
 
-  // Category bar (Probationary vs Regular)
-  const probCount = evals.filter(e => e.live_employment_type === 'Probationary').length;
-  const regCount = evals.filter(e => e.live_employment_type === 'Regular').length;
+  // Category bar (Probationary vs Regular — evaluated this month)
+  const probEvalCount = evals.filter(e => e.employment_type === 'Probationary').length;
+  const regEvalCount = evals.filter(e => e.employment_type === 'Regular').length;
   const catCtx = document.getElementById('categoryChart');
   if (categoryChartInstance) categoryChartInstance.destroy();
   categoryChartInstance = new Chart(catCtx, {
     type: 'bar',
     data: {
       labels: ['Probationary', 'Regular'],
-      datasets: [{ label: 'Employees Evaluated', data: [probCount, regCount], backgroundColor: ['#F5A623', '#122A4D'], borderRadius: 6 }]
+      datasets: [{ label: 'Employees Evaluated', data: [probEvalCount, regEvalCount], backgroundColor: ['#F5A623', '#122A4D'], borderRadius: 6 }]
     },
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
   });
 
-  // Trend across last 6 months
   await loadTrendChart();
+  loadRegularTrendChart();
 }
 
 async function loadTrendChart() {
@@ -935,6 +943,36 @@ async function loadTrendChart() {
       ]
     },
     options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+  });
+}
+
+// "How many Regular employees do we have, month by month" — approximated
+// from current Regular employees' Date Hired (we don't track a separate
+// regularization date), so this reads as workforce headcount growth rather
+// than a historical log of exactly when each person was regularized.
+function loadRegularTrendChart() {
+  const now = new Date(SELECTED_MONTH + 'T00:00:00');
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    months.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+  }
+  const regularEmployees = EMPLOYEES.filter(e => e.employment_type === 'Regular' && e.date_hired);
+
+  const counts = months.map(m => {
+    const cutoff = new Date(m.getFullYear(), m.getMonth() + 1, 0); // end of that month
+    return regularEmployees.filter(e => new Date(e.date_hired + 'T00:00:00') <= cutoff).length;
+  });
+  const labels = months.map(m => m.toLocaleString('en-US', { month: 'short', year: '2-digit' }));
+
+  const ctx = document.getElementById('regularTrendChart');
+  if (regularTrendChartInstance) regularTrendChartInstance.destroy();
+  regularTrendChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Regular Employees', data: counts, backgroundColor: '#2E9E5B', borderRadius: 6 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
   });
 }
 
@@ -1002,136 +1040,9 @@ document.getElementById('runBulkImportBtn').addEventListener('click', async () =
 });
 
 // ---------------------------------------------------------------------------
-// BACKUP & RESTORE (export / import a full snapshot of every table)
-// ---------------------------------------------------------------------------
-const BACKUP_TABLES = ['employees', 'evaluations', 'hr_attention', 'third_fifth_month', 'progress_highlights', 'sign_off'];
-
-document.getElementById('exportAllBtn').addEventListener('click', async () => {
-  const btn = document.getElementById('exportAllBtn');
-  const statusEl = document.getElementById('exportAllStatus');
-  btn.disabled = true;
-  statusEl.textContent = 'Gathering data…';
-  try {
-    const backup = { exported_at: new Date().toISOString(), version: 1, tables: {} };
-    for (const table of BACKUP_TABLES) {
-      const { data, error } = await supabase.from(table).select('*');
-      if (error) throw new Error(`${table}: ${error.message}`);
-      backup.tables[table] = data || [];
-    }
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `mpep-backup-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    const totalRows = Object.values(backup.tables).reduce((sum, rows) => sum + rows.length, 0);
-    statusEl.textContent = `Exported ${totalRows} rows across ${BACKUP_TABLES.length} tables.`;
-    toast('Backup downloaded', 'success');
-  } catch (err) {
-    statusEl.textContent = '';
-    toast('Export failed: ' + err.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-document.getElementById('restoreAllBtn').addEventListener('click', async () => {
-  const fileInput = document.getElementById('restoreAllFile');
-  const statusEl = document.getElementById('restoreAllStatus');
-  const resultsEl = document.getElementById('restoreAllResults');
-  const btn = document.getElementById('restoreAllBtn');
-
-  const file = fileInput.files[0];
-  if (!file) { toast('Choose a backup file first', 'error'); return; }
-  if (!confirm('Restoring will overwrite any existing records that share an ID with the backup file, and add anything new. Continue?')) return;
-
-  btn.disabled = true;
-  statusEl.textContent = 'Reading backup file…';
-  resultsEl.innerHTML = '';
-
-  try {
-    const text = await file.text();
-    const backup = JSON.parse(text);
-    if (!backup || typeof backup.tables !== 'object') throw new Error('This does not look like a valid MPEP backup file.');
-
-    // Restore in dependency order: employees first (evaluations / hr_attention /
-    // third_fifth_month reference employee_id), then everything else.
-    const order = ['employees', 'evaluations', 'hr_attention', 'third_fifth_month', 'progress_highlights', 'sign_off'];
-    const summary = [];
-    for (const table of order) {
-      const rows = backup.tables[table];
-      if (!Array.isArray(rows) || rows.length === 0) { summary.push({ table, count: 0, error: null }); continue; }
-      const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' });
-      summary.push({ table, count: rows.length, error: error ? error.message : null });
-    }
-
-    statusEl.textContent = '';
-    resultsEl.innerHTML = `
-      <div class="table-wrap" style="box-shadow:none;">
-        <table>
-          <thead><tr><th>Table</th><th>Rows in file</th><th>Status</th></tr></thead>
-          <tbody>
-            ${summary.map(s => `
-              <tr>
-                <td>${escapeHtml(s.table)}</td>
-                <td>${s.count}</td>
-                <td>${s.error ? `<span class="badge badge-red">${escapeHtml(s.error)}</span>` : `<span class="badge badge-green">Restored</span>`}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>`;
-
-    const failed = summary.filter(s => s.error).length;
-    toast(failed ? `Restore finished with ${failed} table(s) failing` : 'Restore complete', failed ? 'error' : 'success');
-
-    await loadEmployees();
-    await refreshCurrentView();
-  } catch (err) {
-    statusEl.textContent = '';
-    toast('Restore failed: ' + err.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-// ---------------------------------------------------------------------------
 // HELPERS
 // ---------------------------------------------------------------------------
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-
-// Computes "length of service" from a date_hired string, live off today's
-// date — nothing is stored, so this always reflects the current day with
-// no schema changes needed. Shows in days for very new hires, then
-// "X yr(s), Y mo(s)" once they've been on for a month or more.
-function lengthOfService(dateHiredStr) {
-  if (!dateHiredStr) return '—';
-  const hired = new Date(dateHiredStr + 'T00:00:00');
-  if (isNaN(hired.getTime())) return '—';
-  const now = new Date();
-  if (hired > now) return '—';
-
-  let months = (now.getFullYear() - hired.getFullYear()) * 12 + (now.getMonth() - hired.getMonth());
-  if (now.getDate() < hired.getDate()) months--;
-  if (months < 0) months = 0;
-
-  if (months < 1) {
-    const days = Math.max(0, Math.floor((now - hired) / 86400000));
-    if (days === 0) return 'Hired today';
-    return `${days} day${days === 1 ? '' : 's'}`;
-  }
-  const years = Math.floor(months / 12);
-  const remMonths = months % 12;
-  const parts = [];
-  if (years > 0) parts.push(`${years} yr${years === 1 ? '' : 's'}`);
-  if (remMonths > 0 || years === 0) parts.push(`${remMonths} mo${remMonths === 1 ? '' : 's'}`);
-  return parts.join(', ');
-}
-function bindStaticButtons() { /* placeholder for future static bindings */ }

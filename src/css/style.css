@@ -210,8 +210,28 @@ thead th {
   position: sticky; top: 0; white-space: nowrap;
 }
 tbody td { padding: 11px 14px; border-top: 1px solid var(--slate-100); vertical-align: middle; white-space: nowrap; }
-tbody tr:hover { background: var(--slate-50); }
-.empty-row td { text-align:center; padding: 34px; color: var(--slate-400); font-style: italic; white-space: normal; }
+tbody tr:hover { background: var(--slate-50); cursor: pointer; }
+.empty-row td { text-align:center; padding: 34px; color: var(--slate-400); font-style: italic; white-space: normal; cursor: default; }
+.empty-row:hover { background: transparent; }
+
+/* Sticky first column (usually Employee/Name) so it stays visible while
+   scrolling long tables horizontally on smaller screens. */
+thead th:first-child { position: sticky; left: 0; top: 0; z-index: 3; background: var(--slate-100); }
+tbody td:first-child { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 2px 0 4px rgba(11,31,58,0.05); }
+tbody tr:hover td:first-child { background: var(--slate-50); }
+
+/* Click-to-select row highlight — a visual "this is the row I'm about to
+   edit" cue, distinct from browser text selection. Toggled via JS. */
+tbody tr.row-selected td { background: var(--amber-100); }
+tbody tr.row-selected td:first-child { background: var(--amber-100); }
+tbody tr.row-selected { box-shadow: inset 3px 0 0 var(--amber-500); }
+
+/* Truncate long free-text cell content with an ellipsis + hover tooltip
+   (via the title attribute) instead of forcing horizontal scroll to read it. */
+.truncate {
+  display: inline-block; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; vertical-align: middle;
+}
 
 .badge { display:inline-block; padding: 4px 10px; border-radius: 100px; font-size: 11.5px; font-weight: 700; }
 .badge-green { background: #E4F6EB; color: var(--green); }
@@ -301,3 +321,31 @@ tbody tr:hover { background: var(--slate-50); }
 .signoff-block .when { font-size: 12px; color: var(--slate-600); margin-top: 2px; }
 .signoff-block .pending { font-size: 13px; color: var(--slate-400); font-style: italic; }
 .signoff-block.done { border-color: var(--green); background: #F1FBF5; }
+
+/* ---------- Evaluation History modal ---------- */
+.history-emp-header {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1.5px solid var(--slate-100);
+}
+.history-emp-header .name { font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--navy-900); }
+.history-emp-header .meta { font-size: 12.5px; color: var(--slate-600); margin-top: 2px; }
+.history-mini-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 14px; }
+.history-mini-table th {
+  text-align: left; padding: 8px 10px; background: var(--slate-100); color: var(--slate-600);
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; font-weight: 700;
+}
+.history-mini-table td { padding: 8px 10px; border-top: 1px solid var(--slate-100); }
+.history-mini-table tr.editing-row td { background: var(--amber-100); }
+.history-add-form {
+  background: var(--slate-50); border: 1.5px dashed var(--slate-200); border-radius: 10px;
+  padding: 14px; margin-top: 6px;
+}
+.history-add-form h4 { margin: 0 0 12px; font-size: 13px; color: var(--navy-900); }
+.history-empty { text-align: center; padding: 20px; color: var(--slate-400); font-style: italic; font-size: 13px; }
+
+/* ---------- 3rd & 5th Month due badges ---------- */
+.due-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 100px; }
+.due-badge.overdue { background: #FCE9E7; color: var(--red); }
+.due-badge.due { background: #FFF4DA; color: #9A6E00; }
+.due-badge.notyet { background: var(--slate-100); color: var(--slate-400); }
+

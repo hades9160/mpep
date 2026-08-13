@@ -64,6 +64,10 @@ create table if not exists hr_attention (
 
 -- ============================================================================
 -- 4. PROGRESS HIGHLIGHTS  (narrative summary per month)
+--    NOTE: as of v2, this table is no longer used by the app (the Progress
+--    Highlights page was removed). Left here for backward compatibility /
+--    in case old data needs to be exported. See supabase/migration_v2.sql
+--    if you want to drop it.
 -- ============================================================================
 create table if not exists progress_highlights (
   id                        uuid primary key default gen_random_uuid(),
@@ -78,10 +82,13 @@ create table if not exists progress_highlights (
 
 -- ============================================================================
 -- 5. THIRD & FIFTH MONTH TRACKER
+--    One row per employee (upserted by employee_id) — the app auto-lists
+--    every Probationary employee here rather than requiring a manual
+--    "add employee" step, so employee_id must be unique.
 -- ============================================================================
 create table if not exists third_fifth_month (
   id                    uuid primary key default gen_random_uuid(),
-  employee_id           uuid references employees(id) on delete set null,
+  employee_id           uuid unique references employees(id) on delete cascade,
   department             text,
   position                text,
   date_hired              date,

@@ -54,7 +54,6 @@ const VIEW_TITLES = {
   regular:      ['Regular Employees', 'Performance evaluation monitoring'],
   hrAttention:  ['HR Attention', 'Employees requiring HR / management attention'],
   thirdFifth:   ['3rd & 5th Month Tracker', 'Probationary regularization tracker'],
-  signoff:      ['Sign-Off', 'Report preparation and review'],
   bulkImport:   ['Bulk Import', 'Add many records at once from a spreadsheet'],
 };
 
@@ -84,6 +83,19 @@ function currentView() {
   return document.querySelector('.nav-item.active').dataset.view;
 }
 
+// Formats a Date using its LOCAL calendar date (year/month/day as the user's
+// browser sees them) — never use Date.toISOString() for this. toISOString()
+// converts to UTC first, and for timezones ahead of UTC (e.g. Philippines,
+// UTC+8) a local midnight timestamp rolls back to the previous day once
+// converted, silently storing the wrong date. That mismatch is what broke
+// the Reporting Month selector against evaluation records saved elsewhere.
+function toDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 async function refreshCurrentView() { await loadView(currentView()); }
 
 async function loadView(view) {
@@ -93,7 +105,6 @@ async function loadView(view) {
   if (view === 'regular') return loadEvaluationsView('Regular');
   if (view === 'hrAttention') return loadHrAttention();
   if (view === 'thirdFifth') return loadThirdFifth();
-  if (view === 'signoff') return loadSignoff();
   if (view === 'bulkImport') return; // static view, no data load needed
 }
 
@@ -123,12 +134,12 @@ function populateMonthSelector() {
   const opts = [];
   for (let i = -12; i <= 3; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const value = d.toISOString().slice(0, 10);
+    const value = toDateStr(d);
     const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
     opts.push({ value, label });
   }
   sel.innerHTML = opts.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
-  const currentValue = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const currentValue = toDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
   sel.value = currentValue;
   SELECTED_MONTH = currentValue;
 
@@ -659,7 +670,7 @@ function monthsBetween(fromDateStr, toDate) {
 function addMonths(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setMonth(d.getMonth() + n);
-  return d.toISOString().slice(0, 10);
+  return toDateStr(d);
 }
 function dueBadge(monthsEmployed, targetMonth, hasResult) {
   if (hasResult) return '';
@@ -788,67 +799,6 @@ async function saveThirdFifth(employee) {
 }
 
 // ---------------------------------------------------------------------------
-// SIGN-OFF (one row per month)
-// ---------------------------------------------------------------------------
-function renderSignoffSummary(data) {
-  document.getElementById('soSummaryMonth').textContent = monthLabel(SELECTED_MONTH);
-  const badge = document.getElementById('soStatusBadge');
-  const body = document.getElementById('soSummaryBody');
-
-  const roles = [
-    { who: data?.prepared_by, when: data?.prepared_date, role: 'Prepared By' },
-    { who: data?.department_head, when: data?.department_head_date, role: 'Department Head' },
-    { who: data?.hr_representative, when: data?.hr_representative_date, role: 'HR Representative' },
-    { who: data?.management_approval, when: data?.management_date, role: 'Management Approval' },
-  ];
-  const completedCount = roles.filter(r => r.who).length;
-
-  if (completedCount === 0) {
-    badge.textContent = 'Not started';
-    badge.className = 'badge badge-grey';
-  } else if (completedCount === roles.length) {
-    badge.textContent = 'Complete';
-    badge.className = 'badge badge-green';
-  } else {
-    badge.textContent = `${completedCount} of ${roles.length} signed`;
-    badge.className = 'badge badge-yellow';
-  }
-
-  body.innerHTML = `<div class="signoff-grid">` + roles.map(r => `
-    <div class="signoff-block ${r.who ? 'done' : ''}">
-      <div class="role">${r.role}</div>
-      ${r.who
-        ? `<div class="who">✓ ${escapeHtml(r.who)}</div><div class="when">${r.when || 'No date given'}</div>`
-        : `<div class="pending">Awaiting sign-off</div>`}
-    </div>
-  `).join('') + `</div>`;
-}
-
-async function loadSignoff() {
-  const { data, error } = await supabase
-    .from('sign_off').select('*')
-    .eq('reporting_month', SELECTED_MONTH).maybeSingle();
-  if (error) { toast(error.message, 'error'); return; }
-  const fields = ['prepared_by', 'prepared_date', 'department_head', 'department_head_date',
-    'hr_representative', 'hr_representative_date', 'management_approval', 'management_date'];
-  fields.forEach(f => { document.getElementById('so_' + f).value = data ? (data[f] || '') : ''; });
-  renderSignoffSummary(data);
-}
-document.getElementById('saveSignoffBtn').addEventListener('click', async () => {
-  const payload = {
-    reporting_month: SELECTED_MONTH,
-    prepared_by: strOrNull('so_prepared_by'), prepared_date: strOrNull('so_prepared_date'),
-    department_head: strOrNull('so_department_head'), department_head_date: strOrNull('so_department_head_date'),
-    hr_representative: strOrNull('so_hr_representative'), hr_representative_date: strOrNull('so_hr_representative_date'),
-    management_approval: strOrNull('so_management_approval'), management_date: strOrNull('so_management_date'),
-  };
-  const { error } = await supabase.from('sign_off').upsert(payload, { onConflict: 'reporting_month' });
-  if (error) { toast(error.message, 'error'); return; }
-  toast('Sign-off saved', 'success');
-  renderSignoffSummary(payload);
-});
-
-// ---------------------------------------------------------------------------
 // DASHBOARD
 // ---------------------------------------------------------------------------
 let statusChartInstance, categoryChartInstance, trendChartInstance, regularTrendChartInstance;
@@ -918,7 +868,7 @@ async function loadTrendChart() {
   const months = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(d.toISOString().slice(0, 10));
+    months.push(toDateStr(d));
   }
   const { data, error } = await supabase
     .from('evaluations').select('reporting_month, evaluation_result')

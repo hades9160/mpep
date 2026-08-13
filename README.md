@@ -98,6 +98,24 @@ the Employees sheet in the same file *and* employees already in the
 database. Import the Employees sheet first (or in the same upload) before
 Evaluations that reference brand-new employees.
 
+## v3 changes (critical timezone bug fix, Sign-Off removed)
+
+**Critical fix — Reporting Month was silently wrong.** The month selector built its date
+values using `Date.toISOString()`, which converts to UTC first. For timezones ahead of UTC
+(Philippines is UTC+8), a local midnight timestamp rolls back to the previous day once
+converted — so picking "August 2026" was actually storing `2026-07-31` under the hood. That
+mismatch is why evaluations never seemed to line up with the selected month, and why
+"This Month's Result" looked disconnected from what was actually logged. Every date built
+in the app now uses local calendar components instead of UTC conversion, so the dropdown's
+displayed month always matches what gets saved and queried.
+
+**Sign-Off page removed** — nav item and page gone entirely, same as Progress Highlights
+before it. The `sign_off` table still exists in your database (harmless, unused).
+
+If you're upgrading an existing deployment: just replace your project files with this
+delivery (keep your `.env`). No new SQL migration is needed for this update — v2's
+`migration_v2.sql` still applies if you haven't run it yet.
+
 ## v2 changes (Employee-driven Probationary/Regular/3rd&5th, trimmed Dashboard)
 
 If you're upgrading an existing deployment, do these two things:

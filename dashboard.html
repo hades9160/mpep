@@ -29,7 +29,6 @@
       <button class="nav-item" data-view="regular">🟢 <span>Regular</span></button>
       <button class="nav-item" data-view="hrAttention">⚠️ <span>HR Attention</span></button>
       <button class="nav-item" data-view="thirdFifth">📆 <span>3rd &amp; 5th Month</span></button>
-      <button class="nav-item" data-view="signoff">✅ <span>Sign-Off</span></button>
       <button class="nav-item" data-view="bulkImport">📥 <span>Bulk Import</span></button>
     </nav>
 
@@ -198,33 +197,6 @@
             <tbody id="tfTbody"></tbody>
           </table>
         </div>
-      </section>
-
-      <!-- ===================== SIGN-OFF ===================== -->
-      <section class="view" id="view-signoff">
-        <p class="section-lead">Report preparation and review sign-off for the selected reporting month.</p>
-
-        <div class="panel" id="soSummaryCard" style="margin-bottom:20px;border-left:4px solid var(--amber-500);">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <h3 style="margin:0;">✅ Saved Summary — <span id="soSummaryMonth">—</span></h3>
-            <span class="badge" id="soStatusBadge">—</span>
-          </div>
-          <div id="soSummaryBody"></div>
-        </div>
-
-        <div class="text-block">
-          <div class="form-grid">
-            <div class="field-sm"><label>Prepared By</label><input id="so_prepared_by"></div>
-            <div class="field-sm"><label>Date</label><input type="date" id="so_prepared_date"></div>
-            <div class="field-sm"><label>Department Head</label><input id="so_department_head"></div>
-            <div class="field-sm"><label>Date</label><input type="date" id="so_department_head_date"></div>
-            <div class="field-sm"><label>HR Representative</label><input id="so_hr_representative"></div>
-            <div class="field-sm"><label>Date</label><input type="date" id="so_hr_representative_date"></div>
-            <div class="field-sm"><label>Management Approval</label><input id="so_management_approval"></div>
-            <div class="field-sm"><label>Date</label><input type="date" id="so_management_date"></div>
-          </div>
-        </div>
-        <button class="btn btn-amber" id="saveSignoffBtn">Save</button>
       </section>
 
       <!-- ===================== BULK IMPORT ===================== -->

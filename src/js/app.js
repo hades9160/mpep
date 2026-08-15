@@ -23,6 +23,7 @@ import './pages/evaluations.js';
 import './pages/hrAttention.js';
 import './pages/thirdFifth.js';
 import './pages/bulkImportUI.js';
+import './pages/backupRestore.js';
 import './crud.js';
 
 // ---------------------------------------------------------------------------

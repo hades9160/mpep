@@ -19,6 +19,7 @@ const VIEW_TITLES = {
   hrAttention:  ['HR Attention', 'Employees requiring HR / management attention'],
   thirdFifth:   ['3rd & 5th Month Tracker', 'Probationary regularization tracker'],
   bulkImport:   ['Bulk Import', 'Add many records at once from a spreadsheet'],
+  backupRestore:['Backup & Restore', 'Download or restore a full backup of the database'],
 };
 
 export function setupNav() {
@@ -57,6 +58,7 @@ export async function loadView(view) {
   if (view === 'hrAttention') return loadHrAttention();
   if (view === 'thirdFifth') return loadThirdFifth();
   if (view === 'bulkImport') return; // static view, no data load needed
+  if (view === 'backupRestore') return; // static view, no data load needed
 }
 
 // ---------------------------------------------------------------------------

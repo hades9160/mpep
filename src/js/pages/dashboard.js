@@ -6,16 +6,18 @@ import { Chart } from 'chart.js';
 import { store } from '../store.js';
 import { toast, monthLabel, toDateStr } from '../utils.js';
 
-let statusChartInstance, categoryChartInstance, trendChartInstance, regularTrendChartInstance;
+let passFailChartInstance, categoryChartInstance, trendChartInstance, regularTrendChartInstance;
 
 export async function loadDashboard() {
   // Workforce totals — from the master Employees list, not scoped to a month.
+  const total = store.employees.length;
   const totalProbationary = store.employees.filter(e => e.employment_type === 'Probationary').length;
   const totalRegular = store.employees.filter(e => e.employment_type === 'Regular').length;
+  const pct = (n) => total ? ((n / total) * 100).toFixed(1) + '%' : '0%';
   document.getElementById('workforceKpiGrid').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Total Employees</div><div class="kpi-value">${store.employees.length}</div></div>
-    <div class="kpi-card yellow"><div class="kpi-label">Probationary</div><div class="kpi-value">${totalProbationary}</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Regular</div><div class="kpi-value">${totalRegular}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Employees</div><div class="kpi-value">${total}</div></div>
+    <div class="kpi-card yellow"><div class="kpi-label">Probationary</div><div class="kpi-value">${pct(totalProbationary)}</div><div class="kpi-sub">${totalProbationary} employee${totalProbationary !== 1 ? 's' : ''}</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Regular</div><div class="kpi-value">${pct(totalRegular)}</div><div class="kpi-sub">${totalRegular} employee${totalRegular !== 1 ? 's' : ''}</div></div>
   `;
   document.getElementById('dashMonthLabel').textContent = monthLabel(store.selectedMonth);
 
@@ -24,26 +26,23 @@ export async function loadDashboard() {
     .eq('reporting_month', store.selectedMonth);
   if (error) { toast(error.message, 'error'); return; }
 
-  const counts = { onTrack: 0, needsImprovement: 0, failed: 0, pip: 0, forReview: 0, completed: 0 };
-  evals.forEach(e => {
-    if (['Passed', 'Satisfactory'].includes(e.evaluation_result)) counts.onTrack++;
-    else if (e.evaluation_result === 'Needs Improvement') counts.needsImprovement++;
-    else if (e.evaluation_result === 'Failed') counts.failed++;
-    else if (e.evaluation_result === 'PIP') counts.pip++;
-    else if (e.evaluation_result === 'For Review') counts.forReview++;
-    else if (e.evaluation_result === 'Completed') counts.completed++;
-  });
+  // Pass vs Failed — a "Passed" here means any of the outcomes counted as a
+  // pass (Passed, Satisfactory, or Completed); everything else that's
+  // explicitly a "Failed" result counts toward the fail total. Other
+  // in-progress statuses (Needs Improvement, PIP, For Review) aren't a
+  // final pass/fail yet, so they're excluded from this total.
+  const passCount = evals.filter(e => ['Passed', 'Satisfactory', 'Completed'].includes(e.evaluation_result)).length;
+  const failCount = evals.filter(e => e.evaluation_result === 'Failed').length;
 
-  // Status donut
-  const statusCtx = document.getElementById('statusChart');
-  if (statusChartInstance) statusChartInstance.destroy();
-  statusChartInstance = new Chart(statusCtx, {
+  const passFailCtx = document.getElementById('statusChart');
+  if (passFailChartInstance) passFailChartInstance.destroy();
+  passFailChartInstance = new Chart(passFailCtx, {
     type: 'doughnut',
     data: {
-      labels: ['On Track', 'Needs Improvement', 'Failed', 'PIP / Action Plan', 'For Review', 'Completed'],
+      labels: ['Passed', 'Failed'],
       datasets: [{
-        data: [counts.onTrack, counts.needsImprovement, counts.failed, counts.pip, counts.forReview, counts.completed],
-        backgroundColor: ['#2E9E5B', '#E0A800', '#D8473C', '#3576D8', '#94A0B2', '#0B1F3A'],
+        data: [passCount, failCount],
+        backgroundColor: ['#2E9E5B', '#D8473C'],
         borderWidth: 0,
       }]
     },

@@ -33,17 +33,39 @@ export function addMonths(dateStr, n) {
   return toDateStr(d);
 }
 
-// Human-readable "X yr Y mo" length of service, used on the Employees page.
+// Precise "X yr Y mo Z day(s)" length of service, used on the Employees page.
+// Computed as an exact calendar breakdown (not just total days ÷ 30), so
+// each unit reflects real elapsed years/months/days from date_hired to today.
+export function lengthOfServiceParts(dateHiredStr) {
+  if (!dateHiredStr) return null;
+  const from = new Date(dateHiredStr + 'T00:00:00');
+  const to = new Date();
+  to.setHours(0, 0, 0, 0);
+  if (to < from) return null;
+
+  let years = to.getFullYear() - from.getFullYear();
+  let months = to.getMonth() - from.getMonth();
+  let days = to.getDate() - from.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonth = new Date(to.getFullYear(), to.getMonth(), 0); // last day of previous month
+    days += prevMonth.getDate();
+  }
+  if (months < 0) { months += 12; years -= 1; }
+
+  const totalDays = Math.floor((to - from) / 86400000);
+  return { years, months, days, totalDays };
+}
+
 export function formatLengthOfService(dateHiredStr) {
-  if (!dateHiredStr) return '—';
-  const months = monthsBetween(dateHiredStr, new Date());
-  if (months === null) return '—';
-  const years = Math.floor(months / 12);
-  const remMonths = months % 12;
-  if (years === 0 && remMonths === 0) return 'Just started';
+  const p = lengthOfServiceParts(dateHiredStr);
+  if (!p) return '—';
+  const { years, months, days } = p;
+  if (years === 0 && months === 0 && days === 0) return 'Just started';
   const parts = [];
-  if (years > 0) parts.push(`${years} yr${years > 1 ? 's' : ''}`);
-  if (remMonths > 0) parts.push(`${remMonths} mo${remMonths > 1 ? 's' : ''}`);
+  if (years > 0) parts.push(`${years} yr${years !== 1 ? 's' : ''}`);
+  if (months > 0) parts.push(`${months} mo${months !== 1 ? 's' : ''}`);
+  if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
   return parts.join(' ');
 }
 

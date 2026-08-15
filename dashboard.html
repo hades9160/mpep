@@ -30,6 +30,7 @@
       <button class="nav-item" data-view="hrAttention">⚠️ <span>HR Attention</span></button>
       <button class="nav-item" data-view="thirdFifth">📆 <span>3rd &amp; 5th Month</span></button>
       <button class="nav-item" data-view="bulkImport">📥 <span>Bulk Import</span></button>
+      <button class="nav-item" data-view="backupRestore">🗄️ <span>Backup &amp; Restore</span></button>
     </nav>
 
     <div class="sidebar-footer">
@@ -63,7 +64,7 @@
 
         <div class="panel-grid" style="margin-top:22px;">
           <div class="panel">
-            <h3>Status Breakdown — <span id="dashMonthLabel"></span></h3>
+            <h3>Pass / Failed Total — <span id="dashMonthLabel"></span></h3>
             <div class="chart-wrap"><canvas id="statusChart"></canvas></div>
           </div>
           <div class="panel">
@@ -226,6 +227,36 @@
         </div>
 
         <div id="bulkImportResults"></div>
+      </section>
+
+      <!-- ===================== BACKUP & RESTORE ===================== -->
+      <section class="view" id="view-backupRestore">
+        <p class="section-lead">
+          Back up the entire database (Employees, Evaluations, HR Attention, and 3rd &amp; 5th Month
+          records) to a single file, or restore from a previously downloaded backup.
+        </p>
+
+        <div class="text-block">
+          <h3>1. Download a backup</h3>
+          <p style="font-size:13px;color:var(--slate-600);margin:6px 0 12px;">
+            Saves every record in the system as one JSON file. Keep it somewhere safe.
+          </p>
+          <button class="btn btn-amber" id="downloadBackupBtn">⬇ Download Backup</button>
+          <div id="backupStatus" style="margin-top:10px;font-size:13px;color:var(--slate-600);"></div>
+        </div>
+
+        <div class="text-block">
+          <h3>2. Restore from a backup</h3>
+          <p style="font-size:13px;color:var(--slate-600);margin:6px 0 12px;">
+            Upload a backup JSON file to restore its records. Existing records with matching IDs
+            will be overwritten — this cannot be undone.
+          </p>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <input type="file" id="restoreBackupFile" accept=".json">
+            <button class="btn btn-outline" id="runRestoreBtn">Restore from File</button>
+          </div>
+          <div id="restoreStatus" style="margin-top:12px;font-size:13px;color:var(--slate-600);"></div>
+        </div>
       </section>
 
     </div>

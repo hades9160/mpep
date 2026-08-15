@@ -6,9 +6,10 @@
 // ============================================================================
 import { supabase } from '../supabaseClient.js';
 import { store } from '../store.js';
-import { toast, escapeHtml, val, strOrNull, populateDeptFilter, formatLengthOfService } from '../utils.js';
+import { toast, escapeHtml, val, strOrNull, populateDeptFilter, formatLengthOfService, monthLabel, resultBadge } from '../utils.js';
 import { openModal, closeModal } from '../ui.js';
 import { currentView, refreshCurrentView } from '../nav.js';
+import * as XLSX from 'xlsx';
 
 export async function loadEmployees() {
   const { data, error } = await supabase.from('employees').select('*').order('name');
@@ -43,7 +44,7 @@ export function renderEmployeesTable() {
     return;
   }
   tbody.innerHTML = rows.map(e => `
-    <tr>
+    <tr class="clickable-row" data-emp-id="${e.id}">
       <td><strong class="truncate" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</strong></td>
       <td><span class="truncate" title="${escapeHtml(e.position || '')}">${escapeHtml(e.position || '—')}</span></td>
       <td>${escapeHtml(e.department || '—')}</td>
@@ -51,12 +52,24 @@ export function renderEmployeesTable() {
       <td>${formatLengthOfService(e.date_hired)}</td>
       <td><span class="badge ${e.employment_type === 'Regular' ? 'badge-green' : 'badge-yellow'}">${e.employment_type}</span></td>
       <td>
+        <button class="btn-icon-text" onclick="viewEmployeeDetails('${e.id}')">Details</button>
         <button class="btn-icon-text" onclick="editEmployee('${e.id}')">Edit</button>
+        <button class="btn-icon-text" onclick="downloadEmployeeDetails('${e.id}')">⬇ Download</button>
         <button class="btn-danger-text" onclick="deleteRow('employees','${e.id}', 'employees')">Delete</button>
       </td>
     </tr>
   `).join('');
 }
+// Clicking anywhere in a row (outside its buttons) opens the same details
+// modal as the "Details" button — handled here rather than in ui.js's
+// generic row-selection listener because only the Employees table opens a
+// modal on row click.
+document.addEventListener('click', (e) => {
+  const row = e.target.closest('#employeesTbody tr[data-emp-id]');
+  if (!row) return;
+  if (e.target.closest('button, a, input, select, textarea')) return;
+  window.viewEmployeeDetails(row.dataset.empId);
+});
 document.addEventListener('input', (e) => {
   if (e.target.id === 'empSearch') renderEmployeesTable();
 });
@@ -114,3 +127,148 @@ export async function loadEmployeesFull() {
   if (currentView() === 'employees') renderEmployeesTable();
   else await refreshCurrentView();
 }
+
+// ---------------------------------------------------------------------------
+// EMPLOYEE DETAILS — click a row (or "Details") to see everything on file
+// for that employee: profile, full evaluation history, HR attention
+// records, and 3rd/5th month result. Also reused to build the per-employee
+// Excel export.
+// ---------------------------------------------------------------------------
+async function fetchEmployeeFullRecord(employeeId) {
+  const employee = store.employees.find(x => x.id === employeeId);
+  if (!employee) return null;
+
+  const [{ data: evals, error: evalErr }, { data: hr, error: hrErr }, { data: tf, error: tfErr }] = await Promise.all([
+    supabase.from('evaluations').select('*').eq('employee_id', employeeId).order('reporting_month', { ascending: false }),
+    supabase.from('hr_attention').select('*').eq('employee_id', employeeId).order('reporting_month', { ascending: false }),
+    supabase.from('third_fifth_month').select('*').eq('employee_id', employeeId).maybeSingle(),
+  ]);
+  if (evalErr) toast(evalErr.message, 'error');
+  if (hrErr) toast(hrErr.message, 'error');
+  if (tfErr && tfErr.code !== 'PGRST116') toast(tfErr.message, 'error');
+
+  return { employee, evaluations: evals || [], hrAttention: hr || [], thirdFifth: tf || null };
+}
+
+window.viewEmployeeDetails = async function (employeeId) {
+  const record = await fetchEmployeeFullRecord(employeeId);
+  if (!record) return;
+  const { employee: e, evaluations, hrAttention, thirdFifth: tf } = record;
+
+  const evalRows = evaluations.length
+    ? evaluations.map(r => `
+        <tr>
+          <td>${monthLabel(r.reporting_month)}</td>
+          <td>${escapeHtml(r.stage || '—')}</td>
+          <td>${resultBadge(r.evaluation_result)}</td>
+          <td>${r.kpi_score != null ? r.kpi_score + '%' : '—'}</td>
+        </tr>`).join('')
+    : `<tr><td colspan="4" class="history-empty">No evaluations logged.</td></tr>`;
+
+  const hrRows = hrAttention.length
+    ? hrAttention.map(r => `
+        <tr>
+          <td>${monthLabel(r.reporting_month)}</td>
+          <td>${escapeHtml(r.key_performance_issue || '—')}</td>
+          <td>${escapeHtml(r.recommendation || '—')}</td>
+        </tr>`).join('')
+    : `<tr><td colspan="3" class="history-empty">No HR attention records.</td></tr>`;
+
+  document.getElementById('historyModalTitle').textContent = `Employee Details — ${e.name}`;
+  document.getElementById('historyModalBody').innerHTML = `
+    <div class="history-emp-header">
+      <div>
+        <div class="name">${escapeHtml(e.name)}</div>
+        <div class="meta">
+          ${escapeHtml(e.position || '—')} · ${escapeHtml(e.department || '—')} · Hired ${e.date_hired || '—'}
+          · Length of service: ${formatLengthOfService(e.date_hired)}
+          · <span class="badge ${e.employment_type === 'Regular' ? 'badge-green' : 'badge-yellow'}">${e.employment_type}</span>
+        </div>
+      </div>
+    </div>
+
+    <h4>Evaluation History</h4>
+    <table class="history-mini-table">
+      <thead><tr><th>Month</th><th>Stage</th><th>Result</th><th>KPI</th></tr></thead>
+      <tbody>${evalRows}</tbody>
+    </table>
+
+    <h4>HR Attention Records</h4>
+    <table class="history-mini-table">
+      <thead><tr><th>Month</th><th>Key Issue</th><th>Recommendation</th></tr></thead>
+      <tbody>${hrRows}</tbody>
+    </table>
+
+    ${tf ? `
+    <h4>3rd &amp; 5th Month Review</h4>
+    <table class="history-mini-table">
+      <thead><tr><th>3rd Month</th><th>5th Month</th><th>Final Recommendation</th></tr></thead>
+      <tbody><tr>
+        <td>${tf.third_month_result ? resultBadge(tf.third_month_result) : '—'}${tf.third_month_date ? ` (${tf.third_month_date})` : ''}</td>
+        <td>${tf.fifth_month_result ? escapeHtml(tf.fifth_month_result) : '—'}${tf.fifth_month_date ? ` (${tf.fifth_month_date})` : ''}</td>
+        <td>${escapeHtml(tf.final_recommendation || '—')}</td>
+      </tr></tbody>
+    </table>` : ''}
+
+    <div style="margin-top:14px;">
+      <button class="btn btn-amber" onclick="downloadEmployeeDetails('${e.id}')">⬇ Download as Excel</button>
+    </div>
+  `;
+  document.getElementById('historyModalOverlay').classList.add('active');
+};
+
+window.downloadEmployeeDetails = async function (employeeId) {
+  const record = await fetchEmployeeFullRecord(employeeId);
+  if (!record) return;
+  const { employee: e, evaluations, hrAttention, thirdFifth: tf } = record;
+
+  const wb = XLSX.utils.book_new();
+
+  const profileSheet = XLSX.utils.aoa_to_sheet([
+    ['Field', 'Value'],
+    ['Name', e.name || ''],
+    ['Position', e.position || ''],
+    ['Department', e.department || ''],
+    ['Date Hired', e.date_hired || ''],
+    ['Length of Service', formatLengthOfService(e.date_hired)],
+    ['Employment Type', e.employment_type || ''],
+  ]);
+  XLSX.utils.book_append_sheet(wb, profileSheet, 'Profile');
+
+  const evalSheet = XLSX.utils.json_to_sheet(evaluations.map(r => ({
+    Month: monthLabel(r.reporting_month),
+    Stage: r.stage || '',
+    Result: r.evaluation_result || '',
+    'KPI (%)': r.kpi_score ?? '',
+    Lates: r.lates ?? 0,
+    Absences: r.absences ?? 0,
+    Undertime: r.undertime ?? 0,
+    'Action Notes': r.action_notes || '',
+  })));
+  XLSX.utils.book_append_sheet(wb, evalSheet, 'Evaluations');
+
+  const hrSheet = XLSX.utils.json_to_sheet(hrAttention.map(r => ({
+    Month: monthLabel(r.reporting_month),
+    'Employment Status': r.employment_status || '',
+    'Key Performance Issue': r.key_performance_issue || '',
+    'Coaching / Support': r.coaching_support || '',
+    'Expected Target': r.expected_target || '',
+    'Next Review Date': r.next_review_date || '',
+    Recommendation: r.recommendation || '',
+  })));
+  XLSX.utils.book_append_sheet(wb, hrSheet, 'HR Attention');
+
+  const tfSheet = XLSX.utils.aoa_to_sheet([
+    ['Field', 'Value'],
+    ['3rd Month Date', tf?.third_month_date || ''],
+    ['3rd Month Result', tf?.third_month_result || ''],
+    ['5th Month Date', tf?.fifth_month_date || ''],
+    ['5th Month Result', tf?.fifth_month_result || ''],
+    ['Final Recommendation', tf?.final_recommendation || ''],
+    ['Remarks', tf?.remarks || ''],
+  ]);
+  XLSX.utils.book_append_sheet(wb, tfSheet, '3rd & 5th Month');
+
+  const safeName = (e.name || 'employee').replace(/[^\w\- ]/g, '').trim().replace(/\s+/g, '_');
+  XLSX.writeFile(wb, `${safeName}_details.xlsx`);
+};

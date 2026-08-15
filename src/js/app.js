@@ -234,7 +234,7 @@ function renderEmployeesTable() {
   );
   const tbody = document.getElementById('employeesTbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">No employees match your filters.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No employees match your filters.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows.map(e => `
@@ -243,6 +243,7 @@ function renderEmployeesTable() {
       <td><span class="truncate" title="${escapeHtml(e.position || '')}">${escapeHtml(e.position || '—')}</span></td>
       <td>${escapeHtml(e.department || '—')}</td>
       <td>${e.date_hired || '—'}</td>
+      <td>${formatLengthOfService(e.date_hired)}</td>
       <td><span class="badge ${e.employment_type === 'Regular' ? 'badge-green' : 'badge-yellow'}">${e.employment_type}</span></td>
       <td>
         <button class="btn-icon-text" onclick="editEmployee('${e.id}')">Edit</button>
@@ -666,6 +667,19 @@ function monthsBetween(fromDateStr, toDate) {
   let months = (toDate.getFullYear() - from.getFullYear()) * 12 + (toDate.getMonth() - from.getMonth());
   if (toDate.getDate() < from.getDate()) months -= 1;
   return Math.max(0, months);
+}
+// Human-readable "X yr Y mo" length of service, used on the Employees page.
+function formatLengthOfService(dateHiredStr) {
+  if (!dateHiredStr) return '—';
+  const months = monthsBetween(dateHiredStr, new Date());
+  if (months === null) return '—';
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+  if (years === 0 && remMonths === 0) return 'Just started';
+  const parts = [];
+  if (years > 0) parts.push(`${years} yr${years > 1 ? 's' : ''}`);
+  if (remMonths > 0) parts.push(`${remMonths} mo${remMonths > 1 ? 's' : ''}`);
+  return parts.join(' ');
 }
 function addMonths(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00');

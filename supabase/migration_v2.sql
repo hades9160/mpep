@@ -12,13 +12,22 @@
 --    third_fifth_month row per employee so the app can upsert by
 --    employee_id.
 --
---    If you have duplicate rows for the same employee from the old manual
---    "Add Employee" flow, keep only the most recently created one before
---    running the constraint below, otherwise it will fail:
---
---    DELETE FROM third_fifth_month a USING third_fifth_month b
---    WHERE a.employee_id = b.employee_id
---      AND a.created_at < b.created_at;
+--    Dedup first: for any employee with more than one row (leftover from
+--    the old manual "Add Employee" flow), keep only the most recently
+--    created row and delete the rest. This runs automatically and is safe —
+--    it only removes duplicates, never an employee's only row.
+delete from third_fifth_month t
+where t.employee_id is not null
+  and t.id in (
+    select id from (
+      select id, row_number() over (
+        partition by employee_id order by created_at desc, id desc
+      ) as rn
+      from third_fifth_month
+      where employee_id is not null
+    ) ranked
+    where ranked.rn > 1
+  );
 
 do $$
 begin

@@ -165,8 +165,8 @@ guide for creating HR user logins in Authentication → Users.
 
 ```
 mpep/
-├── index.html              ← dashboard entry (Vite root page)
-├── login.html                ← sign-in entry
+├── index.html              ← login page (Vite root page)
+├── dashboard.html            ← main app shell, all tabs live in one page
 ├── package.json
 ├── vite.config.js
 ├── .env                       ← your real Supabase keys (git-ignored)
@@ -175,7 +175,32 @@ mpep/
 │   ├── css/style.css
 │   └── js/
 │       ├── supabaseClient.js   ← reads keys from import.meta.env
-│       ├── login.js              ← sign-in page logic
-│       └── app.js                 ← all dashboard logic (CRUD, charts)
-└── supabase/schema.sql        ← run once in Supabase SQL Editor
+│       ├── login.js              ← login page logic
+│       ├── app.js                 ← main entry point — auth guard + wires everything together
+│       ├── store.js                ← shared app state (current user, selected month, employee cache)
+│       ├── utils.js                 ← date formatting, escaping, toast, small form helpers
+│       ├── ui.js                     ← generic modal + row-selection highlight chrome
+│       ├── nav.js                     ← sidebar navigation, view dispatch, month selector
+│       ├── crud.js                     ← shared "Delete" handler used by every page
+│       ├── bulkImport.js                ← Bulk Import file-parsing logic (xlsx → Supabase rows)
+│       └── pages/
+│           ├── employees.js               ← Employees page
+│           ├── evaluations.js              ← Probationary/Regular pages + evaluation history modal
+│           ├── hrAttention.js               ← HR Attention page
+│           ├── thirdFifth.js                 ← 3rd & 5th Month tracker page
+│           ├── dashboard.js                   ← Dashboard KPIs + charts
+│           └── bulkImportUI.js                 ← Bulk Import page (button wiring, results display)
+└── supabase/
+    ├── schema.sql                 ← run once for a fresh database
+    ├── migration_v2.sql             ← employee-driven pages migration
+    └── fix_reporting_month_dates.sql  ← one-time repair for pre-timezone-fix data
 ```
+
+### Why it's split this way
+Each file in `src/js/pages/` owns exactly one sidebar tab — its data loading, rendering, and
+Add/Edit/Delete logic all live together, so if you need to change how HR Attention works, you
+only ever need to open `pages/hrAttention.js`. Shared pieces (state, generic modal, date
+formatting, delete handling) live in the top-level `src/js/` files so no page duplicates them.
+The site itself didn't change — it's still one fast-loading page with instant tab switching,
+this is purely a source-code organization change.
+

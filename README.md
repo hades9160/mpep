@@ -98,6 +98,66 @@ the Employees sheet in the same file *and* employees already in the
 database. Import the Employees sheet first (or in the same upload) before
 Evaluations that reference brand-new employees.
 
+## v4 changes (backup is now a designed Excel workbook)
+
+**Backup & Restore now produces a formatted `.xlsx` workbook instead of a raw JSON dump.**
+The old JSON file was fine for the computer and useless for a person — you couldn't open it,
+read it, or hand it to anyone. The backup is now a real spreadsheet you can read in Excel and
+still restore from.
+
+### What the backup file looks like
+
+- **`Backup Info` cover sheet** — brand header, generation timestamp, who generated it, a
+  contents table with a live record count per sheet (a `COUNTA` formula, so the number stays
+  correct if you delete rows before restoring), a grand total, numbered restore steps, and a
+  warning block explaining the hidden ID columns.
+- **One sheet per table** — Employees, Evaluations, HR Attention, 3rd & 5th Month, Sign-Off,
+  Progress Highlights.
+- **Each data sheet** has a navy title band with the sheet name, record count and source table;
+  a bold header row with an amber underline, frozen along with the first column so the name
+  stays visible while you scroll; autofilter on every column; banded rows; thin borders;
+  real Excel date cells formatted `yyyy-mm-dd` (not text); `0.00` on KPI scores; wrapped text
+  with auto-sized row heights on the long note columns; and **colour-coded result cells** using
+  the same green / red / amber / blue as the badges in the app.
+- **Employee names are resolved** into the Evaluations, HR Attention and 3rd & 5th Month sheets,
+  so you're not reading a wall of UUIDs.
+- **System columns (IDs, timestamps) are hidden** on the far right, in grey italic. They are
+  what make a restore an *update* instead of a duplicate insert. Unhide them if you want,
+  but don't edit them.
+
+### What changed about Restore
+
+- The file picker now accepts `.xlsx`. **Old `.json` backups still restore** — the code detects
+  the format from the extension, so nothing you already downloaded becomes useless.
+- The restore reads back from the sheets by matching header text, and it finds the header row
+  rather than assuming a fixed position, so inserting a note row above a table won't break it.
+- **A row with a blank ID is inserted as a new record** rather than rejected — so you can type
+  new rows straight into the backup file and restore them. Existing IDs are updated. Nothing is
+  ever deleted.
+- Legacy tables (`sign_off`, `progress_highlights`) are treated as optional: if you've dropped
+  them from your database, the backup notes it on the cover sheet and carries on instead of
+  failing.
+
+### Technical notes
+
+- Added **`exceljs`** as a dependency. SheetJS (`xlsx`), which the app already used, cannot
+  write cell styling in its community build — fills, fonts, borders and number formats are all
+  paid-edition features. SheetJS stays in the project and still powers **Bulk Import**; ExcelJS
+  is used only for the backup workbook.
+- ExcelJS is ~1 MB, so it is **dynamically imported** inside `src/js/backupWorkbook.js` rather
+  than at the top level. Vite splits it into its own chunk that only downloads the first time
+  someone opens a backup — the main dashboard bundle is unchanged in size.
+- New file **`src/js/backupWorkbook.js`** holds the workbook layout and the parser, with no DOM
+  or Supabase imports. One `TABLE_SPECS` constant drives both writing and reading, so a renamed
+  column can never desync the two halves. `src/js/pages/backupRestore.js` is now just the
+  fetching, downloading and upserting.
+- Dates are written as real Excel dates built at **UTC midnight** and read back with the UTC
+  getters, so a round-trip is exact in any timezone. This is the same class of bug the v3
+  Reporting Month fix dealt with.
+
+**Upgrading an existing deployment:** run `npm install` (to pull `exceljs`), then replace your
+project files with this delivery, keeping your `.env`. No SQL migration needed.
+
 ## v3 changes (critical timezone bug fix, Sign-Off removed)
 
 **Critical fix — Reporting Month was silently wrong.** The month selector built its date
@@ -183,13 +243,15 @@ mpep/
 │       ├── nav.js                     ← sidebar navigation, view dispatch, month selector
 │       ├── crud.js                     ← shared "Delete" handler used by every page
 │       ├── bulkImport.js                ← Bulk Import file-parsing logic (xlsx → Supabase rows)
+│       ├── backupWorkbook.js             ← styled Excel backup: layout + parser (no DOM/Supabase)
 │       └── pages/
 │           ├── employees.js               ← Employees page
 │           ├── evaluations.js              ← Probationary/Regular pages + evaluation history modal
 │           ├── hrAttention.js               ← HR Attention page
 │           ├── thirdFifth.js                 ← 3rd & 5th Month tracker page
 │           ├── dashboard.js                   ← Dashboard KPIs + charts
-│           └── bulkImportUI.js                 ← Bulk Import page (button wiring, results display)
+│           ├── bulkImportUI.js                 ← Bulk Import page (button wiring, results display)
+│           └── backupRestore.js                 ← Backup & Restore page (fetch, download, upsert)
 └── supabase/
     ├── schema.sql                 ← run once for a fresh database
     ├── migration_v2.sql             ← employee-driven pages migration

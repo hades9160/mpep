@@ -10,6 +10,7 @@ import { loadEmployeesFull } from './pages/employees.js';
 import { loadEvaluationsView } from './pages/evaluations.js';
 import { loadHrAttention } from './pages/hrAttention.js';
 import { loadThirdFifth } from './pages/thirdFifth.js';
+import { logActivity } from './activityLog.js';
 
 // Refresh callbacks are looked up by string key rather than passed as bare
 // function references — inline onclick="" attributes evaluate in global
@@ -25,11 +26,19 @@ const REFRESH_BY_KEY = {
   thirdFifth: () => loadThirdFifth(),
 };
 
+const ENTITY_LABEL_BY_TABLE = {
+  employees: 'Employee',
+  evaluations: 'Evaluation',
+  hr_attention: 'HR Attention record',
+  third_fifth_month: '3rd & 5th Month record',
+};
+
 async function deleteRow(table, id, refreshKey) {
   if (!confirm('Delete this record? This cannot be undone.')) return;
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error) { toast(error.message, 'error'); return; }
   toast('Deleted', 'success');
+  await logActivity('deleted', ENTITY_LABEL_BY_TABLE[table] || table, id);
   const refreshFn = REFRESH_BY_KEY[refreshKey];
   if (refreshFn) await refreshFn();
 }

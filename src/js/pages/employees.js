@@ -9,6 +9,7 @@ import { store } from '../store.js';
 import { toast, escapeHtml, val, strOrNull, populateDeptFilter, formatLengthOfService, monthLabel, resultBadge } from '../utils.js';
 import { openModal, closeModal } from '../ui.js';
 import { currentView, refreshCurrentView } from '../nav.js';
+import { logActivity } from '../activityLog.js';
 import * as XLSX from 'xlsx';
 
 export async function loadEmployees() {
@@ -107,11 +108,13 @@ async function saveEmployee() {
     employment_type: val('f_employment_type'),
   };
   if (!payload.name) { toast('Name is required', 'error'); return; }
+  const wasEditing = !!store.editingId;
   let error;
   if (store.editingId) ({ error } = await supabase.from('employees').update(payload).eq('id', store.editingId));
   else ({ error } = await supabase.from('employees').insert(payload));
   if (error) { toast(error.message, 'error'); return; }
   toast('Employee saved', 'success');
+  await logActivity(wasEditing ? 'updated' : 'created', 'Employee', payload.name);
   closeModal();
   await loadEmployeesFull();
 }

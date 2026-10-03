@@ -24,6 +24,7 @@ import './pages/hrAttention.js';
 import './pages/thirdFifth.js';
 import './pages/bulkImportUI.js';
 import './pages/backupRestore.js';
+import './pages/activityLog.js';
 import './crud.js';
 
 // ---------------------------------------------------------------------------

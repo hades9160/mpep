@@ -8,8 +8,11 @@ import { supabase } from '../supabaseClient.js';
 import { toast } from '../utils.js';
 import { loadEmployees } from './employees.js';
 import { refreshCurrentView } from '../nav.js';
+import { logActivity } from '../activityLog.js';
 
-const BACKUP_TABLES = ['employees', 'evaluations', 'hr_attention', 'third_fifth_month', 'sign_off'];
+// 'sign_off' intentionally excluded — that page was removed from the app;
+// its table may still exist but is no longer part of what MPEP manages.
+const BACKUP_TABLES = ['employees', 'evaluations', 'hr_attention', 'third_fifth_month'];
 
 async function fetchAllRows(table) {
   const { data, error } = await supabase.from(table).select('*');
@@ -76,8 +79,7 @@ document.getElementById('runRestoreBtn').addEventListener('click', async () => {
   for (const table of BACKUP_TABLES) {
     const rows = backup.tables[table];
     if (!Array.isArray(rows) || !rows.length) continue;
-    const onConflict = table === 'sign_off' ? 'reporting_month' : 'id';
-    const { error } = await supabase.from(table).upsert(rows, { onConflict });
+    const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' });
     if (error) errors.push(`${table}: ${error.message}`);
     else restoredCount += rows.length;
   }
@@ -88,6 +90,9 @@ document.getElementById('runRestoreBtn').addEventListener('click', async () => {
   } else {
     statusEl.textContent = `Restore complete — ${restoredCount} record(s) restored.`;
     toast('Restore complete', 'success');
+  }
+  if (restoredCount > 0) {
+    await logActivity('restored', 'Backup', `${restoredCount} record(s) restored from ${file.name}`);
   }
 
   fileInput.value = '';

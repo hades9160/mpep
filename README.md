@@ -98,6 +98,19 @@ the Employees sheet in the same file *and* employees already in the
 database. Import the Employees sheet first (or in the same upload) before
 Evaluations that reference brand-new employees.
 
+## v4 changes (Activity Log)
+
+**New: Activity Log tab.** Every Create, Update, Delete, Bulk Import, and Restore made anywhere
+in the app is now recorded — who did it, what it was, and when — searchable and filterable by
+action type or person.
+
+**Setup required:** run `supabase/add_activity_log.sql` once in Supabase's SQL Editor. It creates
+the `activity_log` table and its security policy; safe to run even if unsure whether it's been
+run before.
+
+**No other code changes** — if you've already applied v3, just add this one table and the new
+`pages/activityLog.js` wiring is already included in this delivery.
+
 ## v3 changes (critical timezone bug fix, Sign-Off removed)
 
 **Critical fix — Reporting Month was silently wrong.** The month selector built its date

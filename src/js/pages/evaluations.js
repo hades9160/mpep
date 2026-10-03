@@ -12,6 +12,7 @@ import { store } from '../store.js';
 import { toast, escapeHtml, val, numOrNull, strOrNull, resultBadge, monthLabel, populateDeptFilter } from '../utils.js';
 import { bindHistoryModalChrome } from '../ui.js';
 import { refreshCurrentView } from '../nav.js';
+import { logActivity } from '../activityLog.js';
 
 export const PROB_RESULTS = ['Passed', 'Failed'];
 export const REG_RESULTS = ['Satisfactory', 'Needs Improvement', 'Failed', 'PIP', 'For Review', 'Completed'];
@@ -208,9 +209,11 @@ window.startEditHistoryEval = function (evalId) {
 
 window.deleteHistoryEval = async function (evalId) {
   if (!confirm('Delete this evaluation? This cannot be undone.')) return;
+  const employee = store.employees.find(e => e.id === historyEmployeeId);
   const { error } = await supabase.from('evaluations').delete().eq('id', evalId);
   if (error) { toast(error.message, 'error'); return; }
   toast('Deleted', 'success');
+  await logActivity('deleted', 'Evaluation', employee?.name || evalId);
   await renderHistoryModal();
   await refreshCurrentView(); // keep Probationary/Regular table + Dashboard in sync
 };
@@ -233,6 +236,7 @@ async function saveHistoryEval(employee) {
     action_notes: employee.employment_type === 'Regular' ? strOrNull('hist_action_notes') : null,
   };
 
+  const wasEditing = !!historyEditingEvalId;
   let error;
   if (historyEditingEvalId) {
     ({ error } = await supabase.from('evaluations').update(payload).eq('id', historyEditingEvalId));
@@ -241,6 +245,7 @@ async function saveHistoryEval(employee) {
   }
   if (error) { toast(error.message, 'error'); return; }
   toast('Evaluation saved', 'success');
+  await logActivity(wasEditing ? 'updated' : 'created', 'Evaluation', `${employee.name} — ${monthLabel(reportingMonth)}`);
   historyEditingEvalId = null;
   await renderHistoryModal();
   await refreshCurrentView(); // keep Probationary/Regular table + Dashboard in sync

@@ -7,6 +7,7 @@ import { store } from '../store.js';
 import { toast, escapeHtml, val, strOrNull } from '../utils.js';
 import { openModal, closeModal } from '../ui.js';
 import { employeeOptions } from './employees.js';
+import { logActivity } from '../activityLog.js';
 
 export async function loadHrAttention() {
   const { data, error } = await supabase
@@ -63,11 +64,14 @@ async function saveHr() {
     coaching_support: strOrNull('f_coaching'), expected_target: strOrNull('f_target'),
     next_review_date: strOrNull('f_next_review'), recommendation: strOrNull('f_recommendation'),
   };
+  const wasEditing = !!store.editingId;
   let error;
   if (store.editingId) ({ error } = await supabase.from('hr_attention').update(payload).eq('id', store.editingId));
   else ({ error } = await supabase.from('hr_attention').insert(payload));
   if (error) { toast(error.message, 'error'); return; }
   toast('Saved', 'success');
+  const employeeName = store.employees.find(e => e.id === payload.employee_id)?.name || payload.employee_id;
+  await logActivity(wasEditing ? 'updated' : 'created', 'HR Attention record', employeeName);
   closeModal();
   await loadHrAttention();
 }

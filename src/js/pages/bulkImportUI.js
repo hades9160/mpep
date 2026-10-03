@@ -8,6 +8,7 @@ import { toast, escapeHtml } from '../utils.js';
 import { runBulkImport } from '../bulkImport.js';
 import { refreshCurrentView } from '../nav.js';
 import { loadEmployees } from './employees.js';
+import { logActivity } from '../activityLog.js';
 
 const SHEET_LABELS = {
   employees: 'Employees',
@@ -56,6 +57,11 @@ document.getElementById('runBulkImportBtn').addEventListener('click', async () =
     }).join('');
 
     toast(`Import finished — ${totalAdded} added, ${totalSkipped} skipped`, totalAdded > 0 ? 'success' : 'error');
+    if (totalAdded > 0) {
+      const perSheet = Object.entries(results).filter(([, r]) => r.added > 0)
+        .map(([key, r]) => `${SHEET_LABELS[key]}: ${r.added}`).join(', ');
+      await logActivity('imported', 'Bulk Import', `${totalAdded} record(s) added`, perSheet);
+    }
 
     // Refresh caches/views so newly imported data shows up immediately
     await loadEmployees();

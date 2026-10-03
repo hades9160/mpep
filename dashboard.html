@@ -31,6 +31,7 @@
       <button class="nav-item" data-view="thirdFifth">📆 <span>3rd &amp; 5th Month</span></button>
       <button class="nav-item" data-view="bulkImport">📥 <span>Bulk Import</span></button>
       <button class="nav-item" data-view="backupRestore">🗄️ <span>Backup &amp; Restore</span></button>
+      <button class="nav-item" data-view="activityLog">🕒 <span>Activity Log</span></button>
     </nav>
 
     <div class="sidebar-footer">
@@ -233,7 +234,8 @@
       <section class="view" id="view-backupRestore">
         <p class="section-lead">
           Back up the entire database (Employees, Evaluations, HR Attention, and 3rd &amp; 5th Month
-          records) to a single file, or restore from a previously downloaded backup.
+          records) to a single file, or restore from a previously downloaded backup. Every restore
+          is recorded in the Activity Log.
         </p>
 
         <div class="text-block">
@@ -256,6 +258,34 @@
             <button class="btn btn-outline" id="runRestoreBtn">Restore from File</button>
           </div>
           <div id="restoreStatus" style="margin-top:12px;font-size:13px;color:var(--slate-600);"></div>
+        </div>
+      </section>
+
+      <!-- ===================== ACTIVITY LOG ===================== -->
+      <section class="view" id="view-activityLog">
+        <p class="section-lead">Every Create, Update, Delete, Import, and Restore made anywhere in the system — who did it and when.</p>
+        <div class="table-toolbar">
+          <div class="left">
+            <input class="search-input" id="logSearch" placeholder="Search activity…">
+            <select class="filter-select" id="logActionFilter">
+              <option value="">All actions</option>
+              <option value="created">Created</option>
+              <option value="updated">Updated</option>
+              <option value="deleted">Deleted</option>
+              <option value="imported">Imported</option>
+              <option value="restored">Restored</option>
+            </select>
+            <select class="filter-select" id="logActorFilter">
+              <option value="">Everyone</option>
+            </select>
+          </div>
+          <button class="btn btn-outline" id="refreshActivityLogBtn">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
+            <tbody id="activityLogTbody"></tbody>
+          </table>
         </div>
       </section>
 

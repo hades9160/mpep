@@ -9,6 +9,7 @@ import { supabase } from '../supabaseClient.js';
 import { store } from '../store.js';
 import { toast, escapeHtml, strOrNull, resultBadge, monthsBetween, addMonths } from '../utils.js';
 import { openModal, closeModal } from '../ui.js';
+import { logActivity } from '../activityLog.js';
 
 function dueBadge(monthsEmployed, targetMonth, hasResult) {
   if (hasResult) return '';
@@ -132,6 +133,7 @@ async function saveThirdFifth(employee) {
   const { error } = await supabase.from('third_fifth_month').upsert(payload, { onConflict: 'employee_id' });
   if (error) { toast(error.message, 'error'); return; }
   toast('Saved', 'success');
+  await logActivity('updated', '3rd & 5th Month record', employee.name);
   closeModal();
   await loadThirdFifth();
 }

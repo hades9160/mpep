@@ -7,25 +7,22 @@
 // The workbook layout/parsing lives in ../backupWorkbook.js; this file only
 // handles fetching, downloading, and writing back to Supabase.
 // ============================================================================
+
 import { supabase } from '../supabaseClient.js';
 import { toast } from '../utils.js';
 import { store } from '../store.js';
 import { loadEmployees } from './employees.js';
 import { refreshCurrentView } from '../nav.js';
-<<<<<<< HEAD
 import { logActivity } from '../activityLog.js';
 
-// 'sign_off' intentionally excluded — that page was removed from the app;
-// its table may still exist but is no longer part of what MPEP manages.
-const BACKUP_TABLES = ['employees', 'evaluations', 'hr_attention', 'third_fifth_month'];
-=======
 import {
   TABLE_SPECS,
-  BACKUP_TABLES,
   buildBackupWorkbook,
   parseBackupWorkbook,
 } from '../backupWorkbook.js';
->>>>>>> 71722b0ec66a6e4f77b997697bd31e7590650b82
+
+// 'sign_off' intentionally excluded — that page was removed from the app;
+// its table may still exist but is no longer part of what MPEP manages.
 
 async function fetchAllRows(table) {
   const { data, error } = await supabase.from(table).select('*');
@@ -68,13 +65,18 @@ document.getElementById('downloadBackupBtn').addEventListener('click', async (e)
       } catch (err) {
         // A legacy table (sign_off, progress_highlights) may have been dropped.
         // That should not kill the whole backup.
-        if (spec.optional) skipped.push({ table: spec.table, reason: err.message });
-        else throw new Error(`${spec.table}: ${err.message}`);
+        if (spec.optional) {
+          skipped.push({ table: spec.table, reason: err.message });
+        } else {
+          throw new Error(`${spec.table}: ${err.message}`);
+        }
       }
     }
 
     statusEl.textContent = 'Building the Excel workbook…';
+
     const generatedAt = new Date();
+
     const wb = await buildBackupWorkbook({
       tables,
       skipped,
@@ -83,16 +85,26 @@ document.getElementById('downloadBackupBtn').addEventListener('click', async (e)
     });
 
     const buffer = await wb.xlsx.writeBuffer();
+
     const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
+
     downloadBlob(blob, `MPEP_Backup_${stamp(generatedAt)}.xlsx`);
 
-    const totalRows = Object.values(tables).reduce((n, rows) => n + rows.length, 0);
+    const totalRows = Object.values(tables).reduce(
+      (n, rows) => n + rows.length,
+      0
+    );
+
     const sheetCount = Object.keys(tables).length;
+
     statusEl.textContent =
       `Backup downloaded — ${totalRows} record(s) across ${sheetCount} sheet(s).` +
-      (skipped.length ? ` Skipped: ${skipped.map(s => s.table).join(', ')}.` : '');
+      (skipped.length
+        ? ` Skipped: ${skipped.map(s => s.table).join(', ')}.`
+        : '');
+
     toast('Excel backup downloaded', 'success');
   } catch (err) {
     statusEl.textContent = `Backup failed: ${err.message}`;
@@ -110,7 +122,11 @@ document.getElementById('runRestoreBtn').addEventListener('click', async (e) => 
   const fileInput = document.getElementById('restoreBackupFile');
   const statusEl = document.getElementById('restoreStatus');
   const file = fileInput.files[0];
-  if (!file) { toast('Choose a backup file first', 'error'); return; }
+
+  if (!file) {
+    toast('Choose a backup file first', 'error');
+    return;
+  }
 
   let tables;
   let warnings = [];
@@ -119,7 +135,11 @@ document.getElementById('runRestoreBtn').addEventListener('click', async (e) => 
     if (/\.json$/i.test(file.name)) {
       // Backups downloaded before the Excel change are still restorable.
       const parsed = JSON.parse(await file.text());
-      if (!parsed?.tables) throw new Error('That JSON file does not look like an MPEP backup.');
+
+      if (!parsed?.tables) {
+        throw new Error('That JSON file does not look like an MPEP backup.');
+      }
+
       tables = parsed.tables;
     } else {
       const parsed = await parseBackupWorkbook(await file.arrayBuffer());
@@ -132,19 +152,27 @@ document.getElementById('runRestoreBtn').addEventListener('click', async (e) => 
     return;
   }
 
-  const incoming = BACKUP_TABLES.reduce((n, t) => n + (tables[t]?.length || 0), 0);
+  const incoming = TABLE_SPECS.reduce(
+    (n, spec) => n + (tables[spec.table]?.length || 0),
+    0
+  );
+
   if (!incoming) {
     statusEl.textContent = 'That file contains no records to restore.';
     toast('Nothing to restore', 'error');
     return;
   }
 
-  if (!confirm(
-    `Restore ${incoming} record(s)?\n\n` +
-    `Existing records with a matching ID will be overwritten. ` +
-    `Rows with no ID will be added as new records. Nothing is deleted.\n\n` +
-    `This cannot be undone.`
-  )) return;
+  if (
+    !confirm(
+      `Restore ${incoming} record(s)?\n\n` +
+      `Existing records with a matching ID will be overwritten. ` +
+      `Rows with no ID will be added as new records. Nothing is deleted.\n\n` +
+      `This cannot be undone.`
+    )
+  ) {
+    return;
+  }
 
   btn.disabled = true;
   statusEl.textContent = 'Restoring…';
@@ -156,31 +184,50 @@ document.getElementById('runRestoreBtn').addEventListener('click', async (e) => 
   // third_fifth_month all reference employee_id via foreign key).
   for (const spec of TABLE_SPECS) {
     const rows = tables[spec.table];
-    if (!Array.isArray(rows) || !rows.length) continue;
-<<<<<<< HEAD
-    const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' });
-    if (error) errors.push(`${table}: ${error.message}`);
-=======
-    const { error } = await supabase.from(spec.table).upsert(rows, { onConflict: spec.conflict });
-    if (error) errors.push(`${spec.table}: ${error.message}`);
->>>>>>> 71722b0ec66a6e4f77b997697bd31e7590650b82
-    else restoredCount += rows.length;
+
+    if (!Array.isArray(rows) || !rows.length) {
+      continue;
+    }
+
+    const { error } = await supabase
+      .from(spec.table)
+      .upsert(rows, { onConflict: spec.conflict });
+
+    if (error) {
+      errors.push(`${spec.table}: ${error.message}`);
+    } else {
+      restoredCount += rows.length;
+    }
   }
 
-  const notes = warnings.length ? ` Notes: ${warnings.join(' ')}` : '';
+  const notes = warnings.length
+    ? ` Notes: ${warnings.join(' ')}`
+    : '';
+
   if (errors.length) {
-    statusEl.textContent = `Restored ${restoredCount} record(s), but some tables failed: ${errors.join('; ')}.${notes}`;
+    statusEl.textContent =
+      `Restored ${restoredCount} record(s), but some tables failed: ` +
+      `${errors.join('; ')}.${notes}`;
+
     toast('Restore finished with errors', 'error');
   } else {
-    statusEl.textContent = `Restore complete — ${restoredCount} record(s) restored.${notes}`;
+    statusEl.textContent =
+      `Restore complete — ${restoredCount} record(s) restored.${notes}`;
+
     toast('Restore complete', 'success');
   }
+
   if (restoredCount > 0) {
-    await logActivity('restored', 'Backup', `${restoredCount} record(s) restored from ${file.name}`);
+    await logActivity(
+      'restored',
+      'Backup',
+      `${restoredCount} record(s) restored from ${file.name}`
+    );
   }
 
   fileInput.value = '';
   btn.disabled = false;
+
   await loadEmployees();
   await refreshCurrentView();
 });

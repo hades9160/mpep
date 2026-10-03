@@ -351,3 +351,11 @@ tbody tr.row-selected { box-shadow: inset 3px 0 0 var(--amber-500); }
 .due-badge.due { background: #FFF4DA; color: #9A6E00; }
 .due-badge.notyet { background: var(--slate-100); color: var(--slate-400); }
 
+
+/* ---------- Activity Log ---------- */
+.log-details { white-space: normal; min-width: 260px; }
+.log-change { font-size: 12.5px; line-height: 1.5; }
+.log-field { font-weight: 600; color: var(--slate-600); }
+.log-old { color: var(--red); text-decoration: line-through; opacity: .8; }
+.log-new { color: var(--green); font-weight: 600; }
+.log-muted { color: var(--slate-400); font-size: 12.5px; }

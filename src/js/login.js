@@ -18,7 +18,7 @@ form.addEventListener('submit', async (e) => {
   const email = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
     errorBox.textContent = error.message;
@@ -26,5 +26,11 @@ form.addEventListener('submit', async (e) => {
     submitBtn.textContent = 'Sign in';
     return;
   }
+  // Record the sign-in in the Activity Log (ignore failures so login always works).
+  try {
+    await supabase.from('activity_log').insert({
+      user_id: data.user.id, user_email: data.user.email, action: 'LOGIN',
+    });
+  } catch (_) { /* ignore */ }
   window.location.href = '/dashboard.html';
 });

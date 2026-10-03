@@ -21,7 +21,7 @@ const VIEW_TITLES = {
   thirdFifth:   ['3rd & 5th Month Tracker', 'Probationary regularization tracker'],
   bulkImport:   ['Bulk Import', 'Add many records at once from a spreadsheet'],
   backupRestore:['Backup & Restore', 'Download or restore a full backup of the database'],
-  activityLog:  ['Activity Log', 'Every system change, who made it, and when'],
+  activityLog:  ['Activity Log', 'Overall system changes — who changed what, and when'],
 };
 
 export function setupNav() {

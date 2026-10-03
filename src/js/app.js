@@ -41,6 +41,12 @@ import './crud.js';
   });
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
+    // Record the sign-out in the Activity Log (ignore failures so logout always works).
+    try {
+      await supabase.from('activity_log').insert({
+        user_id: store.currentUser.id, user_email: store.currentUser.email, action: 'LOGOUT',
+      });
+    } catch (_) { /* ignore */ }
     await supabase.auth.signOut();
     window.location.href = '/';
   });
